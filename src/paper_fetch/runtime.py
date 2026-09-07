@@ -109,6 +109,7 @@ class RuntimeContext:
     asset_profile: str | None = None
     asset_budget: AssetBudget | None = None
     cancel_check: Callable[[], bool] | None = None
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None
     artifact_store: ArtifactStore | None = None
     parse_cache: dict[tuple[Hashable, ...], Any] = field(default_factory=dict)
     session_cache: dict[tuple[Hashable, ...], Any] = field(default_factory=dict)
@@ -218,6 +219,10 @@ class RuntimeContext:
             asset_profile=asset_profile,
             cancel_check=resolved_cancel_check,
         )
+
+    def report_progress(self, event: str, **data: Any) -> None:
+        if self.progress_callback is not None:
+            self.progress_callback(event, data)
 
     @property
     def cancelled(self) -> bool:

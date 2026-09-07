@@ -1373,3 +1373,39 @@ class HttpTransportCacheTests(unittest.TestCase):
 
         self.assertEqual(mapped.code, "rate_limited")
         self.assertEqual(mapped.retry_after_seconds, 4)
+
+
+def test_shared_transport_request_cancellation_is_context_local():
+    from paper_fetch.http.transport import request_cancel_check
+
+    transport = http_module.HttpTransport()
+    entered = threading.Barrier(2)
+    cancelled = threading.Event()
+
+    def worker(should_cancel):
+        token = request_cancel_check.set(
+            cancelled.is_set if should_cancel else lambda: False
+        )
+        try:
+            entered.wait(timeout=1)
+            if should_cancel:
+                cancelled.set()
+                try:
+                    transport._cancellable_sleep(1)
+                except http_module.RequestCancelledError:
+                    return "cancelled"
+                raise AssertionError("Cancellation was ignored")
+            assert cancelled.wait(1)
+            transport._cancellable_sleep(0.01)
+            return "finished"
+        finally:
+            request_cancel_check.reset(token)
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(worker, [True, False]))
+        assert results == ["cancelled", "finished"]
+        assert transport._cancel_check is None
+        assert not transport.cancelled
+    finally:
+        transport.close()

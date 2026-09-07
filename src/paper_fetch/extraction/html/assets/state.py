@@ -281,6 +281,7 @@ class _AssetCollectionState:
     route_concurrency_cap: int | None
     outcomes: list[tuple[str, dict[str, Any]] | None]
     queued_at_by_id: dict[int, float]
+    completion_callback: Callable[[int, bool], None] | None = None
 
     def resolve(self, item: Any) -> AssetDownloadResolution | None:
         queued_at = self.queued_at_by_id.get(id(item), time.monotonic())
@@ -296,6 +297,12 @@ class _AssetCollectionState:
             )
 
     def consume(self, index: int, resolved: AssetDownloadResolution | None) -> None:
+        self._consume(index, resolved)
+        outcome = self.outcomes[index]
+        if outcome is not None and self.completion_callback is not None:
+            self.completion_callback(index, outcome[0] == "asset")
+
+    def _consume(self, index: int, resolved: AssetDownloadResolution | None) -> None:
         if resolved is None:
             return
         if self.asset_budget.internally_cancelled:
@@ -440,6 +447,7 @@ def resolve_and_collect_downloads_as_completed(
     ],
     asset_download_concurrency: int | None,
     asset_budget: AssetBudget,
+    completion_callback: Callable[[int, bool], None] | None = None,
     force_worker_thread: bool = False,
     route_concurrency_cap: int | None = None,
     terminal_failure_factory: (
@@ -466,6 +474,7 @@ def resolve_and_collect_downloads_as_completed(
         route_concurrency_cap=route_concurrency_cap,
         outcomes=outcomes,
         queued_at_by_id={id(item): queued_at for item in work_items},
+        completion_callback=completion_callback,
     )
 
     if max_workers <= 1 and not force_worker_thread:

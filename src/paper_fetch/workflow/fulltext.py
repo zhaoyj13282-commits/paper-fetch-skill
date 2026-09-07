@@ -532,6 +532,8 @@ def fetch_article(
     runtime.fetch_trace = []
     client_registry = dict(runtime.get_clients())
     resolver = resolve_paper_fn or resolve_paper
+    runtime.raise_if_cancelled()
+    runtime.report_progress("stage", stage="identity")
     resolved = resolve_query_with_session_cache(
         query,
         resolver=resolver,
@@ -547,6 +549,8 @@ def fetch_article(
             candidates=resolved.candidates,
         )
 
+    runtime.raise_if_cancelled()
+    runtime.report_progress("stage", stage="fetching")
     metadata, provider_name, metadata_trail = fetch_metadata_for_resolved_query(
         resolved,
         clients=client_registry,

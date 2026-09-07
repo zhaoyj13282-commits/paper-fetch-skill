@@ -52,6 +52,32 @@ paper-fetch fetch --query "10.1186/1471-2105-11-421" \
 
 CLI 适合单篇或批量本地归档；需要 MCP 宿主内 progress/cancel、结构化批量 acceptance 或不便解析 CLI stdout 时可使用 `batch_fetch`。临时阅读、可缓存阅读、批量可读性分诊和 MCP 批量归档的参数矩阵见技能包的 [`presets.md`](../skills/paper-fetch-skill/references/presets.md)。
 
+## 实时进度与机器取消
+
+单篇和批量都支持 `--progress auto|text|jsonl|none`。默认 `auto` 仅在 stderr 连接终端时显示文本；`text` 强制显示，`none` 关闭。正文或 JSON 的 stdout 语义不变。文本按输入序号报告阶段及资产计数，高频资产刷新间隔至少 200ms，阶段和终态立即显示。
+
+`--progress jsonl` 在 stderr 逐行、即时输出协议 1 事件。只识别 `paper_fetch_progress: true` 的行，其他行是普通诊断。每个事件都有 `protocol_version: 1`、本次启动的 `run_id`、原始输入 `index` 和 `type`：
+
+| type | 内容 |
+| --- | --- |
+| `run_started` | `index: 0`，`total` 输入数量 |
+| `stage` | `queued / identity / fetching / assets / validating / writing`；只报告实际执行的阶段 |
+| `assets` | `scope` 当前来源/处理轮次，`counts` 中各项含 `kind: figure/formula/table/supplementary`、`completed`、`total`、`failed` |
+| `terminal` | `record` 为既有 manifest v2 record，产物写入和工作线程清理完成后发送 |
+| `cancel_response` | `status: cancelling / already_finished / invalid_command / stale_run` |
+
+单篇 `index` 为 1，批量即使乱序完成也保留原始序号。`completed` 为已处理资产（包括失败），候选地址尝试及重试不重复累加。同一次发现/下载范围内按资产身份计数，切换来源或重试轮次时 `scope` 改变，消费者替换当前计数。`total: null` 表示未知；不推算百分比。补充材料仅在请求 `asset_profile=all` 时处理。
+
+`--control-stdin` 仅与 `--progress jsonl` 配合使用。等待 `run_started` 后向 stdin 写入以下 JSONL（每行最多 16,384 字符）：
+
+```json
+{"protocol_version":1,"run_id":"从 run_started 读取","command":"cancel","index":2}
+```
+
+`index: null` 取消整批。默认 CLI 不读取 stdin，也没有终端交互式单篇取消菜单。过期 run_id 被拒绝，已终结输入返回 `already_finished`。有效请求立即回应 `cancelling`；执行端确认停止后才发送 `record_status: aborted` 的终态。被取消输入不会被随后成功覆盖；重复 DOI 仍共享抓取，只有全部依赖输入取消才停止共享工作。stdin 断开会请求整批协作式退出。请求等待、资产循环、输出提交沿用现有取消检查，保留共享 HTTP 连接池与出版社限流；浏览器清理由所属工作线程执行，控制读取线程不关闭浏览器。通常的 Ctrl-C 行为保留。
+
+实时终态与最终 manifest 内容一致；批量 `batch-results.jsonl` 仍在结束时按输入序号一次性生成。取消留下的部分产物不代表可导入的完整论文。平台相关浏览器契约见 `macos-adaptation-contract.toml`；WSL/Linux 可移植验证不替代原生 macOS 验证。
+
 ## 单篇 manifest
 
 单篇抓取只有显式传入 `--manifest <path>` 才写 schema v2 manifest；默认不创建 manifest 文件，也不改变普通 stdout 阅读行为：

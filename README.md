@@ -56,6 +56,8 @@ paper-fetch fetch \
   --max-tokens full_text
 ```
 
+CLI 默认在终端 stderr 显示逐篇阶段和资产进度；`--progress text|jsonl|none` 可显式选择输出，`--progress jsonl --control-stdin` 提供机器单篇/整批取消接口，见 [`docs/cli.md`](docs/cli.md#实时进度与机器取消)。
+
 CLI 仍会准备显式工作目录；需要真正无落盘的临时读取时，使用 MCP 临时阅读预设。完整输出和落盘矩阵见 [`docs/cli.md`](docs/cli.md) 与 [`presets.md`](skills/paper-fetch-skill/references/presets.md)。
 
 ## 你会得到什么

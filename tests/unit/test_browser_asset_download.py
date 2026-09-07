@@ -1597,3 +1597,66 @@ def test_wiley_split_preview_preserves_fidelity_and_full_failure(tmp_path):
             report = evaluate_fetch_acceptance(envelope, asset_profile="body")
             assert report.overall.value == "degraded"
             assert "asset_fidelity_degraded" in report.asset.issue_codes
+
+
+def test_asset_progress_counts_identity_once_across_candidates_and_resets_scope(
+    tmp_path,
+):
+    bad = "https://example.test/preview.png"
+    good = "https://example.test/full.png"
+    transport = mock.Mock()
+    transport.request.side_effect = [
+        {"status_code": 404, "headers": {}, "body": b"missing", "url": bad},
+        {
+            "status_code": 200,
+            "headers": {"content-type": "image/png"},
+            "body": png_header(640, 480),
+            "url": good,
+        },
+        {
+            "status_code": 200,
+            "headers": {"content-type": "image/png"},
+            "body": png_header(640, 480),
+            "url": good,
+        },
+    ]
+    events = []
+    with RuntimeContext(
+        env={},
+        download_dir=tmp_path,
+        progress_callback=lambda event, data: events.append((event, data)),
+    ) as context:
+        for pass_index in range(2):
+            result = download_assets(
+                FIGURE_KIND,
+                transport,
+                article_id="paper",
+                assets=[{"kind": "formula", "url": good, "heading": "Equation 1"}],
+                output_dir=tmp_path,
+                user_agent="test",
+                asset_profile="body",
+                options=AssetDownloadOptions(
+                    runtime_context=context,
+                    candidate_builder=lambda *_args, pass_index=pass_index, **_kwargs: (
+                        [bad, good] if pass_index == 0 else [good]
+                    ),
+                ),
+            )
+            assert len(result["assets"]) == 1
+    assets = [data for event, data in events if event == "assets"]
+    assert [data["counts"][0]["completed"] for data in assets] == [0, 1, 0, 1]
+    assert all(
+        data["counts"]
+        == [
+            {
+                "kind": "formula",
+                "total": 1,
+                "completed": data["counts"][0]["completed"],
+                "failed": 0,
+            }
+        ]
+        for data in assets
+    )
+    assert assets[0]["scope"] == assets[1]["scope"]
+    assert assets[0]["scope"] != assets[2]["scope"]
+    assert transport.request.call_count == 3

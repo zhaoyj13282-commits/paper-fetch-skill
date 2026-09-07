@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import contextlib
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -2226,8 +2228,52 @@ def download_assets(
             else []
         )
 
+    # Each discovery/download pass has its own scope; source retries do not
+    # accumulate totals from a previous pass. Identity is independent of attempts.
+    from .identity import html_asset_identity_key
+
+    scope = f"{article_id}:{kind.name}:{uuid4()}"
+    identities = [
+        html_asset_identity_key(asset) or work_keys[index]
+        for index, asset in enumerate(asset_items)
+    ]
+    categories = [str(asset.get("kind") or kind.name) for asset in asset_items]
+    categories = [
+        value if value in {"figure", "formula", "table", "supplementary"} else kind.name
+        for value in categories
+    ]
+    finished: dict[str, bool] = {}
+
+    def report_assets(index: int | None = None, succeeded: bool = False) -> None:
+        if index is not None:
+            finished[identities[index]] = succeeded
+        if runtime_context is None:
+            return
+        counts = []
+        for category in dict.fromkeys(categories):
+            keys = {
+                key
+                for key, group in zip(identities, categories, strict=True)
+                if group == category
+            }
+            counts.append(
+                {
+                    "kind": category,
+                    "total": len(keys),
+                    "completed": len(keys & finished.keys()),
+                    "failed": sum(not finished[key] for key in keys & finished.keys()),
+                }
+            )
+        runtime_context.report_progress("assets", scope=scope, counts=counts)
+
+    if runtime_context is not None:
+        runtime_context.raise_if_cancelled()
+        runtime_context.report_progress("stage", stage="assets")
+    report_assets()
+
     collected = _resolve_and_collect_downloads_as_completed(
         asset_items,
+        completion_callback=report_assets,
         resolver=lambda asset: resolve_asset_download(
             kind,
             asset,

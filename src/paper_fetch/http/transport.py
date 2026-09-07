@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from contextlib import nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass
 import logging
 import os
@@ -51,6 +52,10 @@ from .retry import (
 from .url_policy import (
     DEFAULT_SAFE_REMOTE_URL_POLICY,
     SafeRemoteUrlPolicy,
+)
+
+request_cancel_check: ContextVar[Callable[[], bool] | None] = ContextVar(
+    "paper_fetch_request_cancel_check", default=None
 )
 
 DEFAULT_TIMEOUT_SECONDS = 20
@@ -282,7 +287,7 @@ class HttpTransport(CacheMixin, RetryMixin, BodyMixin):
             )
 
     def _cancellable_sleep(self, seconds: float) -> None:
-        if self._cancel_check is None:
+        if self._cancel_check is None and request_cancel_check.get() is None:
             time.sleep(max(0.0, seconds))
             return
         deadline = time.monotonic() + max(0.0, seconds)
@@ -391,7 +396,7 @@ class HttpTransport(CacheMixin, RetryMixin, BodyMixin):
         if semaphore is not None:
             semaphore.release()
         try:
-            if self._cancel_check is None:
+            if self._cancel_check is None and request_cancel_check.get() is None:
                 gate.acquire()
                 return
             while True:
@@ -404,7 +409,11 @@ class HttpTransport(CacheMixin, RetryMixin, BodyMixin):
 
     @property
     def cancelled(self) -> bool:
-        return bool(self._cancel_check and self._cancel_check())
+        local_check = request_cancel_check.get()
+        return bool(
+            (self._cancel_check and self._cancel_check())
+            or (local_check and local_check())
+        )
 
     def _check_cancelled(self) -> None:
         if self.cancelled:

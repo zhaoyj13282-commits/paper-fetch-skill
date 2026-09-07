@@ -165,7 +165,7 @@ def validate_contract(
     ):
         if browser.get(key) is not False:
             errors.append(f"browser.{key} must be false")
-    for key in ("native_bundle_gate",):
+    for key in ("native_bundle_gate", "cooperative_cancel_owner_thread_cleanup"):
         if browser.get(key) is not True:
             errors.append(f"browser.{key} must be true")
 

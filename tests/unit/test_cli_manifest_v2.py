@@ -875,3 +875,388 @@ def test_batch_rejects_single_manifest_option(tmp_path: Path) -> None:
 
     assert raised.value.code == 2
     assert "single-paper only" in stderr.getvalue()
+
+
+def test_single_progress_jsonl_keeps_stdout_and_manifest_identical(
+    tmp_path, monkeypatch, capsys
+):
+    envelope = _envelope()
+
+    def fetch(*_args, context, **_kwargs):
+        context.report_progress("stage", stage="identity")
+        context.report_progress("stage", stage="fetching")
+        return envelope
+
+    monkeypatch.setattr(cli, "fetch_paper", fetch)
+    manifest = tmp_path / "record.json"
+    assert (
+        cli.main(
+            [
+                "fetch",
+                "--query",
+                "10.1000/acceptance",
+                "--progress",
+                "jsonl",
+                "--format",
+                "json",
+                "--output",
+                "-",
+                "--artifact-mode",
+                "none",
+                "--output-dir",
+                str(tmp_path),
+                "--manifest",
+                str(manifest),
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr()
+    assert json.loads(output.out)
+    assert "paper_fetch_progress" not in output.out
+    events = [json.loads(line) for line in output.err.splitlines()]
+    assert [event["type"] for event in events] == [
+        "run_started",
+        "stage",
+        "stage",
+        "stage",
+        "stage",
+        "terminal",
+    ]
+    assert [event.get("stage") for event in events[1:-1]] == [
+        "queued",
+        "identity",
+        "fetching",
+        "writing",
+    ]
+    record = json.loads(manifest.read_text())
+    assert events[-1]["record"] == record
+    assert all(event["run_id"] == record["run_id"] for event in events)
+    assert events[-1]["index"] == 1
+
+
+@pytest.mark.parametrize("stage", ["identity", "assets", "writing"])
+def test_single_cancel_at_execution_boundaries_prevents_output(
+    tmp_path, monkeypatch, capsys, stage
+):
+    original_emit = cli.FetchProgress.emit
+
+    def emit(progress, event, index, **data):
+        original_emit(progress, event, index, **data)
+        if event == "stage" and data.get("stage") == stage:
+            progress.control(
+                {
+                    "protocol_version": 1,
+                    "run_id": progress.run_id,
+                    "command": "cancel",
+                    "index": 1,
+                }
+            )
+
+    def fetch(*_args, context, **_kwargs):
+        context.report_progress("stage", stage="identity")
+        context.raise_if_cancelled()
+        context.report_progress("stage", stage="assets")
+        context.raise_if_cancelled()
+        return _envelope()
+
+    monkeypatch.setattr(cli.FetchProgress, "emit", emit)
+    monkeypatch.setattr(cli.FetchProgress, "start_control", lambda _self: None)
+    monkeypatch.setattr(cli, "fetch_paper", fetch)
+    manifest = tmp_path / "record.json"
+    assert (
+        cli.main(
+            [
+                "fetch",
+                "--query",
+                "10.1000/acceptance",
+                "--progress",
+                "jsonl",
+                "--control-stdin",
+                "--format",
+                "markdown",
+                "--output-dir",
+                str(tmp_path),
+                "--manifest",
+                str(manifest),
+            ]
+        )
+        == 1
+    )
+    assert not list(tmp_path.glob("*.md"))
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    terminals = [event for event in events if event["type"] == "terminal"]
+    assert len(terminals) == 1
+    assert terminals[0]["record"] == json.loads(manifest.read_text())
+    assert terminals[0]["record"]["record_status"] == "aborted"
+
+
+def test_control_validation_eof_and_finished_race(tmp_path, monkeypatch, capsys):
+    progress = cli.FetchProgress("jsonl", RUN_ID, 2)
+    progress.control(
+        {"protocol_version": 1, "run_id": "old", "command": "cancel", "index": 1}
+    )
+    progress.control(
+        {
+            "protocol_version": 1,
+            "run_id": str(RUN_ID),
+            "command": "cancel",
+            "index": True,
+        }
+    )
+    assert not progress.is_cancelled(1)
+    record = _build_record(tmp_path, result=cli.SingleFetchResult(_envelope()))
+    progress.complete(1, lambda _cancelled: record)
+    progress.control(
+        {"protocol_version": 1, "run_id": str(RUN_ID), "command": "cancel", "index": 1}
+    )
+    assert not progress.is_cancelled(1)
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("not json\n"))
+    progress.read_control()
+    assert progress.is_cancelled(2)
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [
+        event["status"] for event in events if event["type"] == "cancel_response"
+    ] == ["stale_run", "invalid_command", "already_finished", "invalid_command"]
+
+
+@pytest.mark.parametrize("cancel_indexes", [(1,), (2,), (1, 2)])
+def test_batch_duplicate_cancellation_preserves_other_dependants(
+    tmp_path, monkeypatch, capsys, cancel_indexes
+):
+    progress_ref = []
+    monkeypatch.setattr(
+        cli.FetchProgress,
+        "start_control",
+        lambda progress: progress_ref.append(progress),
+    )
+    fetched = []
+
+    def fetch(*_args, context, **_kwargs):
+        fetched.append(True)
+        progress = progress_ref[0]
+        for index in cancel_indexes:
+            progress.control(
+                {
+                    "protocol_version": 1,
+                    "run_id": progress.run_id,
+                    "command": "cancel",
+                    "index": index,
+                }
+            )
+        context.raise_if_cancelled()
+        return _envelope()
+
+    monkeypatch.setattr(cli, "fetch_paper", fetch)
+    monkeypatch.setattr(
+        cli, "_resolve_cli_batch_item_lane", lambda item, **_kwargs: item
+    )
+    queries = tmp_path / "queries.txt"
+    queries.write_text("10.1000/acceptance\n10.1000/acceptance\n")
+    cli.main(
+        [
+            "fetch",
+            "--query-file",
+            str(queries),
+            "--progress",
+            "jsonl",
+            "--control-stdin",
+            "--format",
+            "markdown",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    assert len(fetched) == 1
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "batch-results.jsonl").read_text().splitlines()
+    ]
+    assert [record["record_status"] for record in records] == [
+        "aborted" if index in cancel_indexes else "completed" for index in (1, 2)
+    ]
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [
+        event["record"] for event in events if event["type"] == "terminal"
+    ] == records
+
+
+def test_batch_progress_reports_out_of_order_before_final_manifest(
+    tmp_path, monkeypatch, capsys
+):
+    import threading
+    import time
+
+    second_finished = threading.Event()
+    original_emit = cli.FetchProgress.emit
+
+    def emit(progress, event, index, **data):
+        original_emit(progress, event, index, **data)
+        if event == "terminal" and index == 2:
+            assert not (tmp_path / "batch-results.jsonl").exists()
+            second_finished.set()
+
+    def fetch(query, context, **_kwargs):
+        if query.endswith("first"):
+            assert second_finished.wait(2)
+            time.sleep(0.01)
+        return _envelope()
+
+    monkeypatch.setattr(cli, "fetch_paper", fetch)
+    monkeypatch.setattr(cli.FetchProgress, "emit", emit)
+    monkeypatch.setattr(
+        cli, "_resolve_cli_batch_item_lane", lambda item, **_kwargs: item
+    )
+    queries = tmp_path / "queries.txt"
+    queries.write_text("10.1000/first\n10.1000/second\n")
+    cli.main(
+        [
+            "fetch",
+            "--query-file",
+            str(queries),
+            "--batch-concurrency",
+            "2",
+            "--progress",
+            "jsonl",
+            "--format",
+            "markdown",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    terminals = [event for event in events if event["type"] == "terminal"]
+    assert [event["index"] for event in terminals] == [2, 1]
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "batch-results.jsonl").read_text().splitlines()
+    ]
+    assert [event["record"] for event in reversed(terminals)] == records
+
+
+def test_text_progress_auto_and_asset_throttle(monkeypatch, capsys):
+    monkeypatch.setattr(cli.sys.stderr, "isatty", lambda: True)
+    monkeypatch.setattr(cli.time, "monotonic", lambda: 100.0)
+    progress = cli.FetchProgress("auto", RUN_ID, 1)
+    progress.emit("stage", 1, stage="assets")
+    for completed in range(20):
+        progress.emit(
+            "assets",
+            1,
+            scope="body",
+            counts=[
+                {"kind": "formula", "completed": completed, "total": None, "failed": 0}
+            ],
+        )
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "[1/1] assets" in output.err
+    assert output.err.count("formula") == 1
+    assert "0/?" in output.err
+    monkeypatch.setattr(cli.sys.stderr, "isatty", lambda: False)
+    cli.FetchProgress("auto", RUN_ID, 1)
+    assert capsys.readouterr().err == ""
+
+
+def test_cancellation_during_identity_closes_browser_on_owning_worker(
+    tmp_path, monkeypatch, capsys
+):
+    import threading
+
+    progress_ref = []
+    owners = []
+    closed = []
+    monkeypatch.setattr(
+        cli.FetchProgress,
+        "start_control",
+        lambda progress: progress_ref.append(progress),
+    )
+
+    def resolve(query, context):
+        owner = threading.get_ident()
+        owners.append(owner)
+
+        class Browser:
+            def close(self):
+                closed.append(threading.get_ident())
+                assert threading.get_ident() == owner
+
+        context._camoufox_browser_managers[(owner, True, "test")] = Browser()
+        progress = progress_ref[0]
+        progress.control(
+            {
+                "protocol_version": 1,
+                "run_id": progress.run_id,
+                "command": "cancel",
+                "index": 1,
+            }
+        )
+        context.raise_if_cancelled()
+        raise AssertionError("resolution continued after cancellation")
+
+    def fetch(*_args, **_kwargs):
+        return _envelope()
+
+    monkeypatch.setattr(cli, "resolve_paper", resolve)
+    monkeypatch.setattr(cli, "fetch_paper", fetch)
+    queries = tmp_path / "queries.txt"
+    queries.write_text("cancel during identity\n10.1111/other\n")
+    cli.main(
+        [
+            "fetch",
+            "--query-file",
+            str(queries),
+            "--batch-concurrency",
+            "2",
+            "--progress",
+            "jsonl",
+            "--control-stdin",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "batch-results.jsonl").read_text().splitlines()
+    ]
+    assert [record["record_status"] for record in records] == ["aborted", "completed"]
+    assert owners == closed
+    assert owners and owners[0] != threading.get_ident()
+    assert [
+        json.loads(line)["index"]
+        for line in capsys.readouterr().err.splitlines()
+        if json.loads(line)["type"] == "terminal"
+    ] == [1, 2]
+
+
+def test_control_eof_cancels_every_input_without_fetching(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(""))
+    monkeypatch.setattr(
+        cli.FetchProgress, "start_control", cli.FetchProgress.read_control
+    )
+    fetch = mock.Mock(side_effect=AssertionError("EOF must cancel queued work"))
+    monkeypatch.setattr(cli, "fetch_paper", fetch)
+    queries = tmp_path / "queries.txt"
+    queries.write_text("10.1111/one\n10.1111/two\n")
+    cli.main(
+        [
+            "fetch",
+            "--query-file",
+            str(queries),
+            "--progress",
+            "jsonl",
+            "--control-stdin",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    fetch.assert_not_called()
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert len([event for event in events if event["type"] == "terminal"]) == 2
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "batch-results.jsonl").read_text().splitlines()
+    ]
+    assert all(record["record_status"] == "aborted" for record in records)

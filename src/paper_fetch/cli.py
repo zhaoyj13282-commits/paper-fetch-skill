@@ -14,6 +14,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -37,6 +38,7 @@ from .diagnostics import (
     provider_status_provider_names,
 )
 from .http import RequestCancelledError
+from .http.transport import request_cancel_check
 from .manifest import (
     DEFAULT_MANIFEST_BUILDER_DEPENDENCIES,
     ManifestBuilderDependencies,
@@ -85,6 +87,142 @@ from .workflow.rendering import rewrite_markdown_asset_links
 from .workflow.rendering import (
     save_markdown_to_disk as save_markdown_to_disk_for_target,
 )
+
+
+class FetchProgress:
+    """CLI JSONL/text events and the opt-in stdin control channel (protocol 1)."""
+
+    def __init__(self, mode: str, run_id: UUID, count: int) -> None:
+        self.mode = (
+            ("text" if sys.stderr.isatty() else "none") if mode == "auto" else mode
+        )
+        self.run_id = str(run_id)
+        self.cancel_all = threading.Event()
+        self.cancelled: set[int] = set()
+        self.terminal: dict[int, ManifestRecord] = {}
+        self.count = count
+        # Control and completion must agree on exactly one terminal outcome.
+        # The same lock keeps concurrent stderr events whole and flushed.
+        self.lock = threading.RLock()
+        self.last_assets: dict[int, float] = {}
+        self.emit("run_started", 0, total=count)
+        for index in range(1, count + 1):
+            self.emit("stage", index, stage="queued")
+
+    def emit(self, event: str, index: int, **data: Any) -> None:
+        with self.lock:
+            if index in self.terminal and event not in {"terminal", "cancel_response"}:
+                return
+            if self.mode == "jsonl":
+                sys.stderr.write(
+                    json.dumps(
+                        {
+                            "paper_fetch_progress": True,
+                            "protocol_version": 1,
+                            "run_id": self.run_id,
+                            "index": index,
+                            "type": event,
+                            **data,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                sys.stderr.flush()
+            elif self.mode == "text":
+                if event == "assets":
+                    current = time.monotonic()
+                    counts = data["counts"]
+                    if current - self.last_assets.get(index, 0) < 0.2:
+                        return
+                    self.last_assets[index] = current
+                    detail = ", ".join(
+                        f"{c['kind']} {c['completed']}/{c['total'] if c['total'] is not None else '?'} (failed {c['failed']})"
+                        for c in counts
+                    )
+                elif event == "terminal":
+                    record = data["record"]
+                    detail = record["record_status"]
+                    if record.get("error"):
+                        detail += ": " + str(record["error"].get("reason", ""))
+                else:
+                    detail = str(data.get("stage") or data.get("status") or event)
+                print(f"[{index}/{self.count}] {detail}", file=sys.stderr, flush=True)
+
+    def is_cancelled(self, index: int) -> bool:
+        with self.lock:
+            return self.cancel_all.is_set() or index in self.cancelled
+
+    def complete(
+        self, index: int, build: Callable[[bool], ManifestRecord]
+    ) -> ManifestRecord:
+        with self.lock:
+            if index in self.terminal:
+                return self.terminal[index]
+            record = build(self.is_cancelled(index))
+            if index not in self.terminal:
+                self.terminal[index] = record
+                self.emit(
+                    "terminal",
+                    index,
+                    record=json.loads(serialize_manifest_record(record)),
+                )
+            return record
+
+    def control(self, value: object) -> None:
+        with self.lock:
+            if not isinstance(value, dict):
+                self.emit("cancel_response", 0, status="invalid_command")
+                return
+            index = value.get("index")
+            if (
+                type(value.get("protocol_version")) is not int
+                or value.get("protocol_version") != 1
+                or "index" not in value
+                or value.get("command") != "cancel"
+                or (
+                    index is not None
+                    and (type(index) is not int or not 1 <= index <= self.count)
+                )
+            ):
+                self.emit("cancel_response", 0, status="invalid_command")
+                return
+            if value.get("run_id") != self.run_id:
+                self.emit("cancel_response", index or 0, status="stale_run")
+                return
+            if index in self.terminal or len(self.terminal) == self.count:
+                self.emit("cancel_response", index or 0, status="already_finished")
+                return
+            if index is None:
+                self.cancel_all.set()
+            else:
+                self.cancelled.add(index)
+            self.emit("cancel_response", index or 0, status="cancelling")
+
+    def read_control(self) -> None:
+        try:
+            discarding = False
+            for line in iter(lambda: sys.stdin.readline(16_385), ""):
+                if len(line) > 16_384 or discarding:
+                    if not discarding:
+                        self.emit("cancel_response", 0, status="invalid_command")
+                    discarding = not line.endswith("\n")
+                    continue
+                try:
+                    self.control(json.loads(line))
+                except (ValueError, TypeError):
+                    self.emit("cancel_response", 0, status="invalid_command")
+        except OSError:
+            pass
+        finally:
+            with self.lock:
+                if len(self.terminal) != self.count:
+                    self.cancel_all.set()
+
+    def start_control(self) -> None:
+        threading.Thread(
+            target=self.read_control, name="paper-fetch-control", daemon=True
+        ).start()
 
 
 @dataclass(frozen=True)
@@ -559,7 +697,9 @@ def run_single_fetch(
         asset_profile=args.asset_profile,
         cancel_check=cancel_check,
     )
+    token = request_cancel_check.set(active_context.cancel_check)
     try:
+        active_context.raise_if_cancelled()
         return _run_single_fetch_with_context(
             args,
             query=query,
@@ -571,6 +711,7 @@ def run_single_fetch(
             context=active_context,
         )
     finally:
+        request_cancel_check.reset(token)
         if owns_context:
             active_context.close()
 
@@ -608,6 +749,8 @@ def _run_single_fetch_with_context(
             ),
             context=context,
         )
+        context.raise_if_cancelled()
+        context.report_progress("stage", stage="writing")
         saved_markdown_path = None
         if args.save_markdown_to_disk:
             context.raise_if_cancelled()
@@ -764,11 +907,18 @@ def _resolve_cli_batch_item_lane(
     *,
     context: RuntimeContext,
 ) -> CliBatchItem:
-    return resolve_batch_item_routing(
-        item,
-        context=context,
-        resolver=resolve_paper,
-    )
+    token = request_cancel_check.set(context.cancel_check)
+    try:
+        context.raise_if_cancelled()
+        context.report_progress("stage", stage="identity")
+        resolved = resolve_batch_item_routing(
+            item, context=context, resolver=resolve_paper
+        )
+        context.raise_if_cancelled()
+        return resolved
+    finally:
+        context.close_camoufox_for_current_thread()
+        request_cancel_check.reset(token)
 
 
 def _manifest_output_artifacts(
@@ -1099,6 +1249,12 @@ def run_batch_fetch(
         )
 
     active_run_id = run_id or deps.uuid_factory()
+    progress = FetchProgress(
+        getattr(args, "progress", "auto"), active_run_id, len(queries)
+    )
+    controlled = bool(getattr(args, "control_stdin", False))
+    if controlled:
+        progress.start_control()
     items = [
         CliBatchItem(
             index=index,
@@ -1110,13 +1266,14 @@ def run_batch_fetch(
     ]
     records: dict[int, ManifestRecord] = {}
     records_lock = threading.Lock()
-    cancel_event = threading.Event()
+    cancel_event = progress.cancel_all
     shared_transport = build_http_transport_for_context(
         runtime_env,
         download_dir=output_dir,
         cancel_check=cancel_event.is_set,
         artifact_mode=artifact_mode,
     )
+    duplicates_by_owner: dict[int, tuple[CliBatchItem, ...]] = {}
     with RuntimeContext(
         env=runtime_env,
         transport=shared_transport,
@@ -1124,19 +1281,55 @@ def run_batch_fetch(
         artifact_mode=artifact_mode,
         cancel_check=cancel_event.is_set,
     ) as batch_context:
-        item_contexts = {
-            item.index: batch_context.new_request_context(
-                asset_profile=args.asset_profile,
+        item_contexts = {}
+        for item in items:
+
+            def cancelled(item: CliBatchItem = item) -> bool:
+                return all(
+                    progress.is_cancelled(dependant.index)
+                    for dependant in fanout_batch_items(item, duplicates_by_owner)
+                )
+
+            item_contexts[item.index] = batch_context.new_request_context(
+                asset_profile=args.asset_profile, cancel_check=cancelled
             )
-            for item in items
-        }
+
+        for item in items:
+            item_contexts[item.index].progress_callback = (
+                lambda event, data, index=item.index: progress.emit(
+                    event, index, **data
+                )
+            )
 
         def close_active_contexts() -> None:
             for active_context in item_contexts.values():
                 active_context.close()
 
+        def fence_active_contexts() -> None:
+            for active_context in item_contexts.values():
+                active_context.fence_commits()
+
         try:
             with _cooperative_batch_cancel(cancel_event, close_active_contexts):
+
+                def on_identity_completion(event) -> None:
+                    if event.result.status is not BatchItemStatus.CANCELLED:
+                        return
+                    item = event.result.item
+                    record = progress.complete(
+                        item.index,
+                        lambda _cancelled: _record_from_batch_result(
+                            args,
+                            event.result,
+                            output_dir=output_dir,
+                            artifact_mode=artifact_mode,
+                            run_id=active_run_id,
+                            tool_version=effective_tool_version,
+                            deps=deps,
+                        ),
+                    )
+                    records[item.index] = record
+
                 prepared_lanes = run_batch(
                     items,
                     lambda item: _resolve_cli_batch_item_lane(
@@ -1145,15 +1338,35 @@ def run_batch_fetch(
                     ),
                     max_workers=args.batch_concurrency,
                     lane_key=lambda item: f"resolve:{item.index}",
+                    completion_callback=on_identity_completion,
                     cancel_event=cancel_event,
+                    item_cancel_check=(lambda item: progress.is_cancelled(item.index))
+                    if controlled
+                    else None,
+                    cancel_escalation_callback=fence_active_contexts,
                 )
                 logical_items = [
                     result.value if result.value is not None else result.item
                     for result in prepared_lanes.results
+                    if result.item.index not in records
                 ]
                 scheduled_items, duplicates_by_owner = deduplicate_batch_items(
                     logical_items
                 )
+
+                for owner in scheduled_items:
+                    group = fanout_batch_items(owner, duplicates_by_owner)
+                    indexes = tuple(item.index for item in group)
+                    active_context = item_contexts[owner.index]
+
+                    def report(event, data, indexes=indexes):
+                        for index in indexes:
+                            if not progress.is_cancelled(index):
+                                progress.emit(event, index, **data)
+
+                    active_context.progress_callback = report
+                    for index in indexes:
+                        progress.emit("stage", index, stage="queued")
 
                 def on_completion(
                     event: BatchCompletionEvent[CliBatchItem, CliFetchOutcome],
@@ -1173,15 +1386,32 @@ def run_batch_fetch(
                             lane_key=fanout_item.lane_key,
                             value=outcome,
                         )
-                        record = _record_from_batch_result(
-                            args,
-                            fanout_result,
-                            output_dir=output_dir,
-                            artifact_mode=artifact_mode,
-                            run_id=active_run_id,
-                            tool_version=effective_tool_version,
-                            deps=deps,
-                        )
+
+                        def build(
+                            cancelled: bool, selected=fanout_result
+                        ) -> ManifestRecord:
+                            if cancelled:
+                                selected = replace(
+                                    selected,
+                                    status=BatchItemStatus.CANCELLED,
+                                    value=None,
+                                    failure=BatchFailure(
+                                        reason_code="request_cancelled",
+                                        message="Request cancelled.",
+                                        cancelled=True,
+                                    ),
+                                )
+                            return _record_from_batch_result(
+                                args,
+                                selected,
+                                output_dir=output_dir,
+                                artifact_mode=artifact_mode,
+                                run_id=active_run_id,
+                                tool_version=effective_tool_version,
+                                deps=deps,
+                            )
+
+                        record = progress.complete(fanout_item.index, build)
                         with records_lock:
                             records[fanout_item.index] = record
 
@@ -1205,7 +1435,10 @@ def run_batch_fetch(
                     completion_callback=on_completion,
                     result_classifier=_classify_batch_outcome,
                     cancel_event=cancel_event,
-                    cancel_escalation_callback=close_active_contexts,
+                    item_cancel_check=(lambda item: item_contexts[item.index].cancelled)
+                    if controlled
+                    else None,
+                    cancel_escalation_callback=fence_active_contexts,
                 )
         finally:
             close_active_contexts()
@@ -1243,6 +1476,18 @@ def _add_fetch_arguments(
     suppress_defaults: bool,
 ) -> None:
     """Register the current fetch flags on a parser."""
+    parser.add_argument(
+        "--progress",
+        choices=("auto", "text", "jsonl", "none"),
+        default=_default("auto", suppress_defaults=suppress_defaults),
+        help="Progress on stderr: auto shows text on a terminal; jsonl uses protocol 1.",
+    )
+    parser.add_argument(
+        "--control-stdin",
+        action="store_true",
+        default=_default(False, suppress_defaults=suppress_defaults),
+        help="Read cooperative cancellation commands from stdin (requires --progress jsonl).",
+    )
     query_group = parser.add_mutually_exclusive_group()
     query_group.add_argument(
         "--query",
@@ -1783,28 +2028,36 @@ def _write_single_failure_manifest(
     started_at: datetime,
     deps: ManifestBuilderDependencies,
 ) -> None:
-    record = _build_cli_manifest_record(
-        CliManifestBuildContext(
-            args=args,
-            output_dir=output_dir,
-            artifact_mode=artifact_mode,
-            run_id=run_id,
-            tool_version=tool_version,
-            deps=deps,
-        ),
-        CliManifestAttempt(
-            index=1,
-            query=args.query,
-            started_at=started_at,
-            completed_at=deps.clock(),
-        ),
-        error=error,
-    )
-    _write_single_cli_manifest(
-        args.manifest,
-        record,
-        overwrite=bool(getattr(args, "overwrite", False)),
-    )
+    progress = getattr(args, "_progress", None)
+    with progress.lock if progress is not None else contextlib.nullcontext():
+        if progress is not None and progress.is_cancelled(1):
+            error = RequestCancelledError("Request cancelled.")
+        record = _build_cli_manifest_record(
+            CliManifestBuildContext(
+                args=args,
+                output_dir=output_dir,
+                artifact_mode=artifact_mode,
+                run_id=run_id,
+                tool_version=tool_version,
+                deps=deps,
+            ),
+            CliManifestAttempt(
+                index=1,
+                query=args.query,
+                started_at=started_at,
+                completed_at=deps.clock(),
+            ),
+            error=error,
+            aborted=isinstance(error, RequestCancelledError),
+        )
+        if args.manifest and not isinstance(
+            error, (ManifestWriteError, ManifestTargetConflict, OutputOverwriteRequired)
+        ):
+            _write_single_cli_manifest(
+                args.manifest, record, overwrite=bool(getattr(args, "overwrite", False))
+            )
+        if progress is not None:
+            progress.complete(1, lambda _cancelled: record)
 
 
 def _run_fetch_namespace(args: argparse.Namespace) -> int:
@@ -1815,6 +2068,8 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
     if args.query is not None and args.query_file is not None:
         parser.error("argument --query-file: not allowed with argument --query")
 
+    if args.control_stdin and args.progress != "jsonl":
+        parser.error("--control-stdin requires --progress jsonl.")
     artifact_mode = _effective_artifact_mode(args)
     args.output_is_explicit = _has_explicit_option(raw_args, "--output")
     batch_mode = bool(args.query_file)
@@ -1851,16 +2106,17 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
     manifest_deps = getattr(
         args, "_manifest_deps", DEFAULT_MANIFEST_BUILDER_DEPENDENCIES
     )
-    manifest_run_id = (
-        manifest_deps.uuid_factory() if args.manifest and not batch_mode else None
-    )
-    manifest_tool_version = (
-        package_version() if args.manifest and not batch_mode else None
-    )
-    manifest_started_at = (
-        manifest_deps.clock() if args.manifest and not batch_mode else None
-    )
+    manifest_run_id = manifest_deps.uuid_factory() if not batch_mode else None
+    manifest_tool_version = package_version() if not batch_mode else None
+    manifest_started_at = manifest_deps.clock() if not batch_mode else None
     output_dir: Path | None = None
+    progress = None
+    if not batch_mode:
+        assert manifest_run_id is not None
+        progress = FetchProgress(args.progress, manifest_run_id, 1)
+        args._progress = progress
+        if args.control_stdin:
+            progress.start_control()
 
     try:
         runtime_env = build_runtime_env()
@@ -1881,18 +2137,31 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
                 manifest_deps=manifest_deps,
             )
 
-        result = run_single_fetch(
-            args,
-            query=args.query,
-            output_dir=output_dir,
-            runtime_env=runtime_env,
+        assert progress is not None
+        with RuntimeContext(
+            env=runtime_env,
+            download_dir=output_dir,
             artifact_mode=artifact_mode,
-        )
-        if args.manifest:
+            asset_profile=args.asset_profile,
+            cancel_check=lambda: progress.is_cancelled(1),
+            progress_callback=lambda event, data: progress.emit(event, 1, **data),
+        ) as context:
+            result = run_single_fetch(
+                args,
+                query=args.query,
+                output_dir=output_dir,
+                runtime_env=runtime_env,
+                artifact_mode=artifact_mode,
+                context=context,
+            )
+        with progress.lock:
+            if progress.is_cancelled(1):
+                raise RequestCancelledError("Request cancelled.")
             assert manifest_run_id is not None
             assert manifest_tool_version is not None
             assert manifest_started_at is not None
-            _validate_single_manifest_target(args.manifest, result)
+            if args.manifest:
+                _validate_single_manifest_target(args.manifest, result)
             record = _build_cli_manifest_record(
                 CliManifestBuildContext(
                     args=args,
@@ -1910,26 +2179,16 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
                 ),
                 result=result,
             )
-            _write_single_cli_manifest(
-                args.manifest,
-                record,
-                overwrite=bool(getattr(args, "overwrite", False)),
-            )
+            if args.manifest:
+                _write_single_cli_manifest(
+                    args.manifest,
+                    record,
+                    overwrite=bool(getattr(args, "overwrite", False)),
+                )
+            progress.complete(1, lambda _cancelled: record)
         return 0
     except OutputDirectoryError as exc:
-        if (
-            args.manifest
-            and not batch_mode
-            and output_dir is not None
-            and not isinstance(
-                exc,
-                (
-                    ManifestWriteError,
-                    ManifestTargetConflict,
-                    OutputOverwriteRequired,
-                ),
-            )
-        ):
+        if not batch_mode and output_dir is not None:
             assert manifest_run_id is not None
             assert manifest_tool_version is not None
             assert manifest_started_at is not None
@@ -1946,7 +2205,7 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
         sys.stderr.write(json.dumps(_error_payload(exc), ensure_ascii=False) + "\n")
         return exit_code_for_error(exc)
     except PaperFetchFailure as exc:
-        if args.manifest and output_dir is not None:
+        if not batch_mode and output_dir is not None:
             assert manifest_run_id is not None
             assert manifest_tool_version is not None
             assert manifest_started_at is not None
@@ -1963,7 +2222,7 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
         sys.stderr.write(json.dumps(_error_payload(exc), ensure_ascii=False) + "\n")
         return exit_code_for_error(exc)
     except ProviderFailure as exc:
-        if args.manifest and output_dir is not None:
+        if not batch_mode and output_dir is not None:
             assert manifest_run_id is not None
             assert manifest_tool_version is not None
             assert manifest_started_at is not None
@@ -1980,7 +2239,7 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
         sys.stderr.write(json.dumps(_error_payload(exc), ensure_ascii=False) + "\n")
         return exit_code_for_error(exc)
     except Exception as exc:
-        if args.manifest and not batch_mode and output_dir is not None:
+        if not batch_mode and output_dir is not None:
             assert manifest_run_id is not None
             assert manifest_tool_version is not None
             assert manifest_started_at is not None
@@ -1994,6 +2253,8 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
                 started_at=manifest_started_at,
                 deps=manifest_deps,
             )
+        if isinstance(exc, RequestCancelledError):
+            return 1
         raise
 
 

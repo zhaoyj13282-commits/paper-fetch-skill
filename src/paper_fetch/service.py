@@ -101,6 +101,8 @@ def fetch_paper(
                 context=runtime,
                 resolve_paper_fn=resolve_paper,
             )
+            runtime.raise_if_cancelled()
+            runtime.report_progress("stage", stage="validating")
             envelope = build_fetch_envelope(
                 article,
                 modes=requested_modes,

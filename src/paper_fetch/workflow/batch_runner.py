@@ -340,6 +340,7 @@ class BatchRunner(Generic[ItemT, ResultT]):
         progress_callback: ProgressCallback[ItemT, ResultT] | None = None,
         stop_predicate: StopPredicate[ItemT, ResultT] | None = None,
         cancel_event: threading.Event | None = None,
+        item_cancel_check: Callable[[ItemT], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
         failure_classifier: FailureClassifier = _default_failure_classifier,
         result_classifier: ResultClassifier[ResultT] | None = None,
@@ -360,6 +361,7 @@ class BatchRunner(Generic[ItemT, ResultT]):
         self._progress_callback = progress_callback
         self._stop_predicate = stop_predicate
         self._cancel_event = cancel_event or threading.Event()
+        self._item_cancel_check = item_cancel_check
         self._clock = clock
         self._failure_classifier = failure_classifier
         self._result_classifier = result_classifier
@@ -544,6 +546,31 @@ class BatchRunner(Generic[ItemT, ResultT]):
                     return position
             return None
 
+        async def cancel_queued_items() -> None:
+            if self._item_cancel_check is None:
+                return
+            for index in remaining[:]:
+                if not self._item_cancel_check(item_values[index]):
+                    continue
+                remaining.remove(index)
+                await record_result(
+                    BatchItemResult(
+                        index=index,
+                        item=item_values[index],
+                        lane_key=lane_keys[index],
+                        status=BatchItemStatus.CANCELLED,
+                        value=None,
+                        failure=BatchFailure(
+                            reason_code="request_cancelled",
+                            message="Request cancelled while queued.",
+                            cancelled=True,
+                        ),
+                        error=None,
+                        submitted_at=None,
+                        finished_at=self._clock(),
+                    )
+                )
+
         def fill_available_slots() -> None:
             while len(pending) < self._max_workers:
                 position = find_eligible_position()
@@ -563,8 +590,10 @@ class BatchRunner(Generic[ItemT, ResultT]):
                 lane_in_flight[key] += 1
 
         try:
+            await cancel_queued_items()
             fill_available_slots()
             while pending:
+                await cancel_queued_items()
                 cancellation_requested()
                 maybe_escalate_cancellation()
                 done, _ = await asyncio.wait(
@@ -573,7 +602,7 @@ class BatchRunner(Generic[ItemT, ResultT]):
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if not done:
-                    if _cancellation_isolation_due(
+                    if self._item_cancel_check is None and _cancellation_isolation_due(
                         escalated=cancellation_escalated,
                         escalated_at=cancellation_escalated_at,
                         clock=self._clock,
@@ -625,7 +654,10 @@ class BatchRunner(Generic[ItemT, ResultT]):
                         submitted_at=submitted_at,
                         finished_at=finished_at,
                     )
-                    if status is BatchItemStatus.CANCELLED:
+                    if (
+                        status is BatchItemStatus.CANCELLED
+                        and self._item_cancel_check is None
+                    ):
                         cancellation_observed = True
                         self._cancel_event.set()
                     _record_lane_cooldown(
@@ -651,6 +683,7 @@ class BatchRunner(Generic[ItemT, ResultT]):
                             stopped_by = result
 
                 if not cancellation_requested() and stopped_by is None:
+                    await cancel_queued_items()
                     fill_available_slots()
         except asyncio.CancelledError:
             self._cancel_event.set()
@@ -740,6 +773,7 @@ def run_batch(
     progress_callback: ProgressCallback[ItemT, ResultT] | None = None,
     stop_predicate: StopPredicate[ItemT, ResultT] | None = None,
     cancel_event: threading.Event | None = None,
+    item_cancel_check: Callable[[ItemT], bool] | None = None,
     clock: Callable[[], float] = time.monotonic,
     failure_classifier: FailureClassifier = _default_failure_classifier,
     result_classifier: ResultClassifier[ResultT] | None = None,
@@ -758,6 +792,7 @@ def run_batch(
         progress_callback=progress_callback,
         stop_predicate=stop_predicate,
         cancel_event=cancel_event,
+        item_cancel_check=item_cancel_check,
         clock=clock,
         failure_classifier=failure_classifier,
         result_classifier=result_classifier,
@@ -778,6 +813,7 @@ async def run_batch_async(
     progress_callback: ProgressCallback[ItemT, ResultT] | None = None,
     stop_predicate: StopPredicate[ItemT, ResultT] | None = None,
     cancel_event: threading.Event | None = None,
+    item_cancel_check: Callable[[ItemT], bool] | None = None,
     clock: Callable[[], float] = time.monotonic,
     failure_classifier: FailureClassifier = _default_failure_classifier,
     result_classifier: ResultClassifier[ResultT] | None = None,
@@ -796,6 +832,7 @@ async def run_batch_async(
         progress_callback=progress_callback,
         stop_predicate=stop_predicate,
         cancel_event=cancel_event,
+        item_cancel_check=item_cancel_check,
         clock=clock,
         failure_classifier=failure_classifier,
         result_classifier=result_classifier,
