@@ -1,8 +1,15 @@
 # 统一验收与报告
 
-抓取、cache 命中或本地文件复用都不是最终成功。每个规范目标必须读取工具、manifest 或 cache 返回的统一 acceptance，复核实际响应/文件，再进入 report；不要按 warning 文案另造成功标准。
+抓取、cache 命中或本地文件复用都不是最终成功。这些目标必须读取工具、manifest 或 cache 返回的统一 acceptance，复核实际响应/文件，再进入 report；不要按 warning 文案另造成功标准。仅探测任务使用下方探测核对与报告，不要求探测响应中不存在的全文 acceptance。
 
 共用章节是七个分面、响应验收和最终报告。请求资产时读资产验收；复用本地文件或归档时读文件、路径与 hash 验收；批量任务再读批量验收。检查所需证据与向用户展示多少技术细节是两件事。
+
+## 探测核对与报告
+
+- `batch_check(mode="metadata")` 按逐项 `probe_state`、`evidence`、`warnings` 和 `error` 核对；`likely_yes` 只表示有可读信号，`unknown` 表示证据不足，都不证明已取得或已读全文。
+- 检查每项 `index/query/status`、顶层 `aborted/abort_reason/progress` 及原始输入映射。歧义候选从逐项 `error` 读取；错误、取消、限流和 `not_scheduled` 分别保留，不把未完成项计作成功探测或推断成不可读。
+- 报告规范身份、逐项探测结论及支持证据、错误和必要动作；批量按 probe_state 和调度/错误状态汇总。明确材料只经过可用性探测，没有全文 acceptance，也不宣称已归档或已验证全文。
+- 完成仅探测任务后停止，不自动升级为全文抓取。若复用的是已取得的合格本地全文，仍按本文件的文件与内容验收，并标明本地证据来源，不伪造 `probe_state` 或远端当前可用性。
 
 ## 七个分面
 
@@ -34,6 +41,7 @@ asset 分面分别记录 `accepted_preview`、`fallback_preview` 与有序去重
 
 - 核对响应的规范 identity 与原始输入映射；歧义、DOI mismatch 或身份不足按 [`workflow.md`](workflow.md) 的 BLOCKING 白名单处理。
 - 核对 `content` 是否满足当前 [`presets.md`](presets.md) 的文本意图；任务只需摘要时可接受 limited，用户明确需要全文时不能升级结论。
+- 阅读任务还要取得并读取实际正文：compact 只含验收摘要，不能充当阅读材料；bounded 检查逐项 `content_truncated`、`content_available_chars` 和 `content_returned_chars`，并保留正文自身或宿主的截断提示。即使 acceptance 表明抓取到全文，也不能据截断响应宣称已读全文；完整阅读的获取路径见[临时阅读预设](presets.md#1-临时阅读)。
 - 只有请求了资产才检查 asset 完整度。默认 provider-policy 下，允许保留的远程链接、被接受的 preview 和 `asset_profile=none` 不是自动失败；请求严格 local/full-size 时必须按上述结构化 satisfaction 字段验收，不能只看 top-level `overall`。结构化 asset failure 和 placeholder 始终需报告。
 - 核对请求输出集合，保留 table/formula/asset 降级、fallback code 和 source trail。普通 warning 不按字符串猜测类别。
 - 核对兼容 `source` 与结构化 `acquisition`；若 acquisition 为 `null` 或与 catalog/trace 不一致，明确保留 provenance partial/degraded，不以 provider 名或 URL 补全。向用户展示字段的范围按最终报告处理。
@@ -66,16 +74,18 @@ PY
 
 ## 批量验收
 
+- 本节适用于真实批量抓取；`batch_check` 使用[探测核对与报告](#探测核对与报告)，不要求其提供下述 manifest 字段。
 - 结果必须覆盖原始规范目标的完整 1-based index 集合；响应 `results` 和最终 JSONL 都按 input index，`completion_order` 只在响应中表示实际完成顺序。
 - 每个 index 都有 terminal record、request fingerprint、acceptance 和结构化 error/输出 hash；取消、限流和未调度项不能静默消失。
 - 最终 JSONL、主输出和额外 Markdown 分别验收；某一类文件存在不证明其它类已经完成。JSONL 是一次性最终结果，不作为恢复状态。
 
 ## 最终报告
 
+- 仅探测：按[探测核对与报告](#探测核对与报告)展示可用性证据、错误和调度状态，不套用全文 acceptance 汇总。
 - 普通阅读：保留论文身份、可追溯来源、实际取得的内容范围及影响任务的降级。全文、摘要和元数据必须区分；browser HTML 失败后 PDF 成功仍需保留精确 failure code 和 degraded 结论。
 - 归档：补充实际产物路径、验收结论和缺失资产；只展示本次请求的产物，不把未请求项列为失败。
 - 失败或需用户动作：说明具体原因、受影响目标及必要动作；按需展开结构化 code、执行面、attempt、acquisition、hash 或诊断路径。用户要求审计时提供完整技术证据。
-- 批量：保留原始 index/query 到规范身份的映射及逐项状态，汇总 complete/degraded/limited/failed/action-required、限流、取消和未调度项；其余技术字段保留在已有机器结果中，按核对或诊断需要展示。
+- 批量抓取：保留原始 index/query 到规范身份的映射及逐项状态，汇总 complete/degraded/limited/failed/action-required、限流、取消和未调度项；其余技术字段保留在已有机器结果中，按核对或诊断需要展示。
 
 展示精简不改变工具、manifest 或 cache 的完整结果，也不省略必要的身份、文件和降级验收。需重试时只按 [`failure-handling.md`](failure-handling.md) 的上限和状态变化条件执行。
 

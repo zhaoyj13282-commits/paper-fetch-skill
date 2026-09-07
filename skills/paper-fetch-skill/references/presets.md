@@ -1,6 +1,6 @@
 # 任务预设与落盘矩阵
 
-按 [`workflow.md`](workflow.md) 完成身份解析后，读取共同规则和当前任务对应的预设，先确定请求参数及必要的 scope，再检查本地/cache。预设只补全用户未指定项；执行面确定后核对对应落盘矩阵，批量超过 50 条时再读分块规则。不要用预设跳过 acceptance 和 report。
+输入超过 50 条时，在批量解析前先读[分块规则](#批量分块与证据等级)。按 [`workflow.md`](workflow.md) 完成身份解析后，读取共同规则和当前任务对应的预设，先确定请求参数及必要的 scope，再检查本地/cache。预设只补全用户未指定项；执行面确定后核对对应落盘矩阵。不要用预设跳过当前任务适用的验收或探测核对与报告。
 
 ## 目录
 
@@ -13,7 +13,7 @@
 
 ## 共同规则
 
-- 每次调用都显式选择引用范围：`none`、`top10` 或 `all`。以下完整阅读示例选择 `all`；任务不需要参考文献时改为 `none`，不要省略参数。
+- 支持 `include_refs` 的 fetch/cache 调用（`fetch_paper`、`batch_fetch`、`get_cached` 及 CLI fetch）都显式选择引用范围：`none`、`top10` 或 `all`。以下完整阅读示例选择 `all`；任务不需要参考文献时改为 `none`。解析、探测、`list_cached` 等不支持该参数的接口不传此字段。
 - 每条 CLI fetch 命令都显式传 `--artifact-mode` 和 `--asset-profile`。`--output` / `--output-dir` 是主输出；`--save-markdown` 只是额外 Markdown 副本。
 - 文本归档使用 `artifact_mode=none`、`asset_profile=none`。用户明确要求正文图时使用 `artifact_mode=markdown-assets`、`asset_profile=body`；明确要求补充材料时使用 `artifact_mode=markdown-assets`、`asset_profile=all`。
 - 只在用户还要求原始 provider 载荷或调试 sidecar 时使用 `artifact_mode=all`。补充材料范围由 `asset_profile=all` 决定，不由 `artifact_mode=all` 决定。
@@ -26,7 +26,7 @@
 
 ### 1. 临时阅读
 
-优先使用 MCP，并完整显式传参：
+适用：取得阅读、总结、比较或翻译所需正文，且不要求归档或缓存。多篇比较也沿用此预设。优先使用 MCP `fetch_paper`，并完整显式传参：
 
 ```json
 {
@@ -52,6 +52,8 @@
 
 这个组合把正文放在 MCP 响应中，不写最终 Markdown、provider artifact、资产、fetch-envelope sidecar 或 cache index。保持 `prefer_cache=false`，否则读取 cache 就需要一个 `download_dir` scope。
 
+多篇完整阅读先复用并读取合格本地正文；其余每个规范目标直接调用上述单篇预设，在 provider 速率和 runtime 限制内受控并发。不要先批量抓取再重复获取；单篇 `fetch_paper` 不接受 `concurrency`、`detail` 或 `content_max_chars`。核对实际收到的正文与截断提示后继续用户的阅读任务。
+
 CLI 没有同等的硬零写盘保证；它在 fetch 前会准备工作目录。只需要 stdout 且接受创建一个空工作目录时使用：
 
 ```bash
@@ -69,7 +71,7 @@ paper-fetch fetch --query "10.1186/1471-2105-11-421" \
 
 ### 2. 可缓存阅读
 
-使用 MCP，把响应保留在上下文，同时只允许写严格请求匹配所需的 fetch-envelope sidecar 和 DOI cache index：
+适用：单篇或多篇阅读，用户允许缓存且已有明确 cache scope。使用 MCP `fetch_paper`，把响应保留在上下文，同时只允许写严格请求匹配所需的 fetch-envelope sidecar 和 DOI cache index：
 
 ```json
 {
@@ -97,7 +99,7 @@ paper-fetch fetch --query "10.1186/1471-2105-11-421" \
 
 ### 3. 单篇本地归档
 
-默认只归档主 Markdown，不隐式下载图片：
+适用：用户要求保存一篇论文到本地。默认只归档主 Markdown，不隐式下载图片：
 
 ```bash
 paper-fetch fetch --query "10.1186/1471-2105-11-421" \
@@ -140,7 +142,7 @@ MCP 文本归档显式把主 Markdown 与 cache scope 放在同一目录：
 
 ### 4. 批量可读性分诊
 
-使用 MCP `batch_resolve` / `batch_check`，不要用 CLI 全文 fetch 冒充低成本 probe。每次显式设置 `mode="metadata"` 和并发数：
+适用：只需探测指定论文的全文可用性；单篇也沿用此预设。身份解析使用 `batch_resolve`（单篇用 `resolve_paper`）；探测使用 MCP `batch_check`，不要用 CLI 全文 fetch 冒充低成本 probe。以下 `batch_check` 示例显式设置 `mode="metadata"` 和并发数；不向 `batch_resolve` 传 `mode`：
 
 ```json
 {
@@ -155,11 +157,13 @@ MCP 文本归档显式把主 Markdown 与 cache scope 放在同一目录：
 
 `batch_check(mode="metadata")` 固定不写下载目录，结果只有 `likely_yes` 或 `unknown` 的探测证据。结果数组与输入等长、原顺序，每项保留 1-based `index/query/status/error/provider_lane`；`not_scheduled` 不是完成，顶层 progress 会单列。Title 会先在 item-local context 解析 provider lane，已知 DOI 只做本地 canonical 规范化；一个 provider 的 cooldown 不会扩大到其它 lane。它没有抓取全文，不能报告成“已归档”“已验证全文”或“metadata-only 全文”。需要真实正文结论时，对选中的规范 DOI 再进入本地优先决策树并调用 `fetch_paper`。
 
-超过 50 条时按[批量分块与证据等级](#批量分块与证据等级)处理。CLI 当前没有等价的 metadata probe 预设。
+逐项核对 `probe_state`、`evidence`、`warnings`、`error` 及取消/未调度状态，按[探测核对与报告](acceptance.md#探测核对与报告)完成任务，不要求全文 acceptance，也不自动升级为全文抓取。只有用户要求真实正文结论时才进入 fetch。
+
+超过 50 条时从解析阶段起按[批量分块与证据等级](#批量分块与证据等级)处理。CLI 当前没有等价的 metadata probe 预设。
 
 ### 5. 批量本地归档
 
-默认使用 CLI 文本归档，并显式指定主输出、汇总、artifact 和资产策略：
+适用：用户要求将多篇论文归档到本地。默认使用 CLI 文本归档，并显式指定主输出、汇总、artifact 和资产策略：
 
 ```bash
 paper-fetch fetch --query-file ./queries.txt \
@@ -229,7 +233,7 @@ CLI 不提供 cache-only `prefer_cache`。`--artifact-mode none` 不会禁止显
 
 `artifact_mode=none` 不等于 MCP 完全不落盘：只要 `no_download=false`，成功 fetch 仍会写 fetch-envelope sidecar 和 cache index。`no_download=true` 也不覆盖 `save_markdown=true` 的显式用户输出。
 
-`batch_fetch` 不传 `batch_results` 时不写批量结果文件；因此临时批量阅读仍可沿用第一行完全不落盘组合。默认 `detail="compact"` 不返回多篇正文；确需临时片段时显式用 `detail="bounded", content_max_chars=<全批上限>`。显式传入 `batch_results` 时，即使论文下载参数本身不落盘，最终 JSONL 仍是预期写盘产物。
+`batch_fetch` 不传 `batch_results` 时不写批量结果文件；无需落盘的批量正文验收可沿用第一行完全不落盘组合。默认 `detail="compact"` 不返回正文；只需片段时显式用 `detail="bounded", content_max_chars=<全批上限>`，并检查逐项 `content_truncated`、`content_available_chars` 和 `content_returned_chars`。需要完整阅读时直接使用单篇阅读预设或读取合格文件，不能用 compact 验收摘要或 bounded 截断片段宣称已读全文。显式传入 `batch_results` 时，即使论文下载参数本身不落盘，最终 JSONL 仍是预期写盘产物。
 
 ## 本地优先决策树
 
@@ -249,6 +253,6 @@ CLI 不提供 cache-only `prefer_cache`。`--artifact-mode none` 不会禁止显
 ## 批量分块与证据等级
 
 - 在输入规范化时为每条原始输入固定 1-based `index`，去重和分块后仍保留原 index 到规范目标的映射。
-- 对超过 50 条的分诊按原顺序切块；例如 113 条必须拆成 `[1..50]`、`[51..100]`、`[101..113]`。每块最多 50 条，并显式传 `concurrency`。给每条块内结果重新附上分块前的原 index，收集后按该 index 排序合并；不得用完成顺序或块内 `1..N` 重新编号。
+- `batch_resolve`、`batch_check`、`batch_fetch` 每次均最多 50 条。首次批量解析前按原顺序切块；例如 113 条先拆成 `[1..50]`、`[51..100]`、`[101..113]`。每块显式传 `concurrency`。汇总解析结果后跨块 DOI 去重，再把需 probe/fetch 的规范目标按每块最多 50 条提交。原始 index 是宿主保留的映射，不作为工具额外参数；将各阶段块内结果映射到全部原始别名，最终按原 index 排序，不按完成顺序或块内 `1..N` 重新编号。
 - `batch_check(mode="metadata")` 是 likely probe：`likely_yes` 表示有可读信号，`unknown` 表示证据不足。二者都不是已抓取全文。
 - 真实抓取使用 `batch_fetch` 或 `fetch_paper`，并通过 acceptance 才能报告全文完成；已移除 article check。无需落盘的正文检查参数见 [Batch Probe Contract](tool-contract.md#batch-probe-contract)。

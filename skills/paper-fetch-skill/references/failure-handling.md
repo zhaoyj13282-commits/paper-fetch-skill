@@ -21,8 +21,8 @@
 ## 批量分诊和并发
 
 - `batch_check(mode="metadata")` 是较低成本的 likely probe，只产生 `probe_state=likely_yes|unknown` 的证据。`likely_yes` 表示存在可读信号，不能报告成已经抓取正文、已经验收全文或已验证 `has_fulltext=true`。
-- 独立 `has_fulltext` 和 `batch_check(mode="article")` 已移除。单篇探测调用 `batch_check(queries=[query])`，读取 `results[0].error`（歧义候选也在其中）；真实正文检查使用 `batch_fetch` 并读取 acceptance，无落盘参数见 [Batch Probe Contract](tool-contract.md#batch-probe-contract)。
-- 在切块前给输入保留原始 1-based `index`。每次 `batch_resolve` / `batch_check` 最多 50 条；超过 50 条时按原顺序切为连续块，例如 113 条为 `1..50`、`51..100`、`101..113`。把块内结果映射回原 index，最终按原 index 排序，不按完成顺序或块内序号重新编号。
+- 独立 `has_fulltext` 和 `batch_check(mode="article")` 已移除。单篇探测调用 `batch_check(queries=[query])`，读取 `results[0].error`（歧义候选也在其中）；仅探测按[探测核对与报告](acceptance.md#探测核对与报告)结束，不自动抓全文。用户要求真实正文检查时使用 `batch_fetch` 并读取 acceptance，无落盘参数及完整阅读路径见 [Batch Probe Contract](tool-contract.md#batch-probe-contract)。
+- 三个批量工具每次最多 50 条；从输入规范化起按[批量分块与证据等级](presets.md#批量分块与证据等级)保留原始 index、切块、汇总解析并跨块 DOI 去重，再继续 probe/fetch。不得按完成顺序或块内序号重新编号。
 - `batch_fetch` 同样每次最多 50 条，并直接返回 input-ordered terminal records 与独立 `completion_order`；不要按完成顺序重排。单项普通失败默认继续，其结构化 acceptance/error 进入最终报告；显式 `continue_on_error=false` 才停止全批后续新提交。
 - 阶段之间保持依赖有序：先 resolve/去重，再 probe 或 fetch，最后 acceptance/report。同一阶段内身份独立的条目可使用显式 `concurrency=1..8` 受控并发；根据 provider、宿主容量和任务规模选择，不假定默认并发为 3。
 - 收到 `rate_limited` 后立即停止向相同 provider lane 提交新项，保留尚未调度项和 `retry_after_seconds`/cooldown；不相关 provider lane 可以继续。等待期满后若仍需重试，也受单项最多 3 次代理尝试约束。

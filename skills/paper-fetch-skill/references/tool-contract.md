@@ -58,12 +58,15 @@
 - resolve、probe/fetch 和 acceptance 等阶段保持依赖有序；同一阶段的独立条目可显式设置 `concurrency=1..8` 受控并发，不假定默认值为 3。
 - 代理级重试、provider lane 限流和失败报告只遵循 [`failure-handling.md`](failure-handling.md)。它与底层 HTTP Retry-After/5xx retry 分层；相同 `prefer_cache=false` 请求重跑不得称为绕过缓存。
 
-需要真实正文检查时使用 `batch_fetch`，以每项 `acceptance` 判断结果。无需落盘时显式调用以下现有参数组合（不传 `batch_results`，不改变 `batch_fetch` 默认值）：
+仅探测时按[探测核对与报告](acceptance.md#探测核对与报告)完成任务，不要求全文 acceptance，也不自动升级为抓取。用户要求真实正文检查时使用 `batch_fetch`，以每项 `acceptance` 判断获取结果；下面的 compact 示例不交付阅读正文。需要完整阅读或多篇比较时直接使用[单篇阅读预设](presets.md#1-临时阅读)或读取合格本地文件。无需落盘的批量正文检查显式调用以下现有参数组合（不传 `batch_results`，不改变 `batch_fetch` 默认值）：
 
 ```python
 batch_fetch(
     queries=[...],
+    concurrency=4,
     modes=["article"],
+    include_refs="all",
+    max_tokens="full_text",
     detail="compact",
     save_markdown=False,
     no_download=True,
@@ -79,7 +82,7 @@ batch_fetch(
 - 输入沿用 `fetch_paper` 的 `modes`、`strategy`、`include_refs`、`max_tokens`、`prefer_cache`、`no_download`、`artifact_mode`、`save_markdown`、`markdown_output_dir`、`markdown_filename` 和 `download_dir` 语义；`queries` 限 `1..50`，`concurrency` 限 `1..8`。多条输入不能共用一个 `markdown_filename`。
 - 默认 `detail="compact"`，每项只返回稳定 1-based `index`、attempt/完成序号、run/record ID、request fingerprint、DOI/source、统一 acceptance 摘要、结构化 error、warning/code 摘要和带 size/SHA-256 的输出文件快照；结果数组始终按输入 index 排列，`completion_order` 单独保留实际完成顺序。
 - `get_cached.asset_summary` 使用完整 v2 asset facet，含 audited/expected/discovered/attempted、accepted/fallback preview、failure/issue codes 与 remote-link facts；`batch_fetch.output_artifacts[]` 除 path/kind/hash 外还稳定声明 `route` 和 `failure_code`（不可用时为 `null`）。
-- 临时阅读需要少量正文时使用 `detail="bounded", content_max_chars=N`；`N` 是整批共享的 `1..100000` 字符上限，不是每篇上限。compact 不含 `article` 或 `markdown`，bounded 也只含受总上限约束的 Markdown 片段，不能用来无界回传多篇全文。
+- 只需少量正文片段时使用 `detail="bounded", content_max_chars=N`；`N` 是整批共享的 `1..100000` 字符上限，不是每篇上限。compact 不含 `article` 或 `markdown`，bounded 也只含受总上限约束的 Markdown 片段；核对逐项 `content_truncated`、`content_available_chars`、`content_returned_chars`，不能据截断片段宣称已读全文。多篇完整阅读直接逐篇使用阅读预设，已归档正文则读文件，不先批量抓取再重复获取。
 - `batch_results=<path>` 可选；指定时只在整批结束后按输入顺序原子写一次最终 schema-v2 JSONL，每个输入一条终态记录。目标存在且内容不同时默认拒绝覆盖，`overwrite=true` 才允许替换。该文件不是 journal，不提供 audit、reconcile 或恢复语义。
 - 一个 provider/resource lane 限流后只停止该 lane 的新项，其他 lane 继续；普通单项失败默认 `continue_on_error=true`，设为 false 才停止新的全批提交。支持 progress 的宿主会收到开始、逐终态和最终通知。
 - Resolve 后以规范 DOI 建 canonical target table；DOI、DOI URL、大小写变体及多个 title alias 只在当前批次执行一个 representative，再按原 index/query 顺序 fan-out。不同请求之间不共享执行。

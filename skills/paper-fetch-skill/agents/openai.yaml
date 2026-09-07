@@ -1,4 +1,4 @@
 interface:
   display_name: "Paper Fetch Skill"
-  short_description: "Fetch AI-friendly paper text by DOI, URL, or title"
-  default_prompt: "Use $paper-fetch-skill whenever you need the text, readability, or full-text availability of a specific paper or a citation list of identifiable papers."
+  short_description: "Fetch verified paper text or probe full-text availability"
+  default_prompt: "Use $paper-fetch-skill to fetch and verify the full text of the papers I provide, or probe their full-text availability if I only request a check."
