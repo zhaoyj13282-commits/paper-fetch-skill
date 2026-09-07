@@ -36,7 +36,9 @@ class MacosAdaptationValidatorTests(unittest.TestCase):
 
         self.assertIn("runtime_bundle_built_in must be false", diagnostic)
         self.assertIn("native_bundle_gate must be true", diagnostic)
-        self.assertIn("cooperative_cancel_owner_thread_cleanup must be true", diagnostic)
+        self.assertIn(
+            "cooperative_cancel_owner_thread_cleanup must be true", diagnostic
+        )
 
     def test_release_policy_keeps_build_evidence_private(self) -> None:
         contract = validator.load_contract()

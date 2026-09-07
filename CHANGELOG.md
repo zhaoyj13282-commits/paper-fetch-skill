@@ -6,6 +6,23 @@ All notable public changes to `paper-fetch-skill` are documented in this file.
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.2.0 - 2026-09-07
+
+### Added — CLI progress and cooperative cancellation
+
+- Single and batch fetches now support `--progress auto|text|jsonl|none` on stderr, preserving stdout for paper content or JSON. The default `auto` displays text only in a terminal; JSONL reports input-indexed stages, asset counts, and terminal manifest records.
+- `--progress jsonl --control-stdin` accepts commands to cancel one input or the entire batch. Cancellation preserves completed results and original input order; duplicate DOI inputs retain shared work until all dependent inputs are cancelled. Terminal events follow output submission and worker cleanup, while final batch JSONL remains a single input-ordered result file.
+
+### Fixed — Oxford Academic inline images
+
+- Oxford Academic HTML now rewrites downloaded preview-image links to local asset paths before article-model conversion, keeping figures inline without duplicate images. Undownloaded images retain their remote links, and partial failures retain their acceptance evidence.
+
+### Changed — paper skill discovery and reading guidance
+
+- Skill descriptions now cover full-text retrieval and availability probes, including explicit paper candidates found by an agent searching for evidence to answer a question. The existing five presets now state their selection criteria.
+- Batch guidance applies the 50-input limit before identity resolution, preserves original indices, and deduplicates canonical DOIs across chunks. Full reading and comparison tasks reuse qualified local text or fetch each paper with the existing reading preset; compact results and truncated bounded excerpts do not count as having read the full text.
+- Availability-only tasks report per-item probe evidence, errors, and unscheduled states without requiring full-text acceptance or automatically fetching the paper. Fetch/cache examples explicitly select supported reference parameters; existing authorization, cache scope, output, and provenance boundaries remain unchanged.
+
 ## 6.1.6 - 2026-09-07
 
 ### Fixed — Nature extended assets and Wiley image retrieval
