@@ -585,3 +585,26 @@ def test_asset_summary_round_trips_through_current_model() -> None:
     )
     restored = Quality(asset_summary=asdict(summary))  # type: ignore[arg-type]
     assert restored.asset_summary == summary
+
+
+def test_wiley_preview_failure_policy_does_not_change_other_assets():
+    from paper_fetch.models.builders import _asset_from_entry
+    from paper_fetch.quality.assets import preview_asset_is_accepted
+
+    for provider in ("wiley", "science", None):
+        for kind in ("figure", "formula", "unknown"):
+            entry = {
+                "kind": kind,
+                "download_tier": "preview",
+                "preview_accepted": False,
+                "width": 1200,
+                "height": 900,
+                "recovery_attempts": [
+                    {"stage": "preview_fallback", "provider": provider}
+                ],
+            }
+            expected = not (provider == "wiley" and kind == "figure")
+            assert preview_asset_is_accepted(entry) is expected
+            asset = _asset_from_entry(entry, kind=kind, heading_fallback="Asset")
+            assert asset.preview_accepted is expected
+            assert preview_asset_is_accepted(asset) is expected

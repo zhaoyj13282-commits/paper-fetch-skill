@@ -7,7 +7,7 @@ import math
 import re
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from collections.abc import Mapping, Sequence
 
 from ..common_patterns import (
@@ -533,9 +533,8 @@ def _springer_allows_extended_data_table_image_fallback(
 ) -> bool:
     label_number = _springer_extended_data_table_number(label)
     table_page_number = _springer_table_page_number(table_url)
-    return bool(
-        label_number and table_page_number and label_number == table_page_number
-    )
+    # The URL numbers pages, while the label numbers Extended Data tables.
+    return bool(label_number and table_page_number)
 
 
 def _springer_response_content_type(response: Mapping[str, Any]) -> str:
@@ -569,7 +568,9 @@ def _springer_table_image_asset(
         "heading": heading,
         "caption": normalize_text(caption),
         "url": image_url,
-        "section": "body",
+        "section": "supplementary"
+        if _springer_extended_data_table_number(label)
+        else "body",
     }
     if image_url:
         asset["full_size_url"] = image_url
@@ -895,17 +896,33 @@ class SpringerClient(ProviderClient):
         source_url: str,
         *,
         context: RuntimeContext,
+        asset_profile: AssetProfile = "all",
     ) -> tuple[str, list[dict[str, str]], list[str], list[dict[str, Any]]]:
 
         soup = BeautifulSoup(html_text, choose_parser())
         table_entries: list[dict[str, str]] = []
         warnings: list[str] = []
         table_assets: list[dict[str, Any]] = []
+        supplementary_sections, source_data_sections = (
+            _springer_dom._springer_collect_asset_sections(soup)
+        )
 
         for node in _springer_inline_table_nodes(soup):
             if not isinstance(node, Tag) or node.parent is None:
                 continue
             label = _springer_table_label(node)
+            supplementary = bool(_springer_extended_data_table_number(label)) or any(
+                node is section
+                or _springer_dom._springer_is_descendant_of(node, section)
+                for section in [*supplementary_sections, *source_data_sections]
+            )
+            if supplementary and asset_profile != "all":
+                # Keep the textual mention without presenting an excluded table
+                # node to subsequent asset/table extraction.
+                mention = soup.new_tag("p")
+                mention.string = _springer_short_text(node)
+                node.replace_with(mention)
+                continue
             caption = _springer_table_caption(node, label)
             table_url = ""
             for selector in SPRINGER_TABLE_LINK_SELECTORS:
@@ -919,6 +936,16 @@ class SpringerClient(ProviderClient):
             if not table_url:
                 warning = f"Springer inline table supplement for {label} was skipped because no table page link was found."
                 warnings.append(warning)
+                if supplementary:
+                    table_assets.append(
+                        {
+                            "kind": "table",
+                            "section": "supplementary",
+                            "heading": _springer_table_label_heading(label),
+                            "caption": caption,
+                            "source_url": source_url,
+                        }
+                    )
                 node.decompose()
                 continue
 
@@ -938,11 +965,24 @@ class SpringerClient(ProviderClient):
             asset = table_page_result[2]
             if page_warning:
                 warnings.append(page_warning)
+                if supplementary and asset is None:
+                    table_assets.append(
+                        {
+                            "kind": "table",
+                            "section": "supplementary",
+                            "heading": _springer_table_label_heading(label),
+                            "caption": caption,
+                            "source_url": table_url,
+                            "figure_page_url": table_url,
+                        }
+                    )
             if not rendered_page_markdown:
                 node.decompose()
                 continue
 
             if asset is not None:
+                if supplementary:
+                    asset["section"] = "supplementary"
                 table_assets.append(asset)
             placeholder = table_placeholder(len(table_entries) + 1)
             block = soup.new_tag("p")
@@ -966,6 +1006,7 @@ class SpringerClient(ProviderClient):
         metadata: Mapping[str, Any],
         *,
         context: RuntimeContext,
+        asset_profile: AssetProfile = "all",
     ) -> SpringerHtmlAttempt:
         normalized_doi = normalize_doi(doi)
         if not normalized_doi:
@@ -997,6 +1038,7 @@ class SpringerClient(ProviderClient):
                 html_text,
                 response_url,
                 context=context,
+                asset_profile=asset_profile,
             )
         )
         extraction_payload = _cached_springer_html_payload(
@@ -1231,6 +1273,7 @@ class SpringerClient(ProviderClient):
         context: RuntimeContext | None = None,
     ) -> RawFulltextPayload:
         runtime_context = self._runtime_context(context)
+        asset_profile = cast(AssetProfile, runtime_context.asset_profile or "all")
         normalized_doi = normalize_doi(doi)
         if not normalized_doi:
             raise ProviderFailure(
@@ -1253,23 +1296,31 @@ class SpringerClient(ProviderClient):
         }
 
         def run_html(_state: ProviderWaterfallState) -> RawFulltextPayload:
-            attempt = self._prepare_html_attempt(doi, metadata, context=runtime_context)
+            attempt = self._prepare_html_attempt(
+                doi,
+                metadata,
+                context=runtime_context,
+                asset_profile=asset_profile,
+            )
             attempt_context["attempt"] = attempt
             attempt_context["response_url"] = attempt.response_url
             attempt_context["html_text"] = attempt.html_text
             attempt_context["merged_metadata"] = dict(attempt.merged_metadata)
             if attempt.diagnostics.accepted:
-                extracted_assets = [
-                    *_cached_springer_scoped_assets(
-                        runtime_context,
-                        attempt.asset_body_html,
-                        attempt.response_url,
-                        asset_profile="all",
-                        supplementary_html_text=attempt.asset_supplementary_html,
-                        source_data_html_text=attempt.asset_source_data_html,
-                    ),
-                    *[dict(item) for item in attempt.inline_table_assets],
-                ]
+                extracted_assets = _filter_springer_assets_for_profile(
+                    [
+                        *_cached_springer_scoped_assets(
+                            runtime_context,
+                            attempt.asset_body_html,
+                            attempt.response_url,
+                            asset_profile="all",
+                            supplementary_html_text=attempt.asset_supplementary_html,
+                            source_data_html_text=attempt.asset_source_data_html,
+                        ),
+                        *[dict(item) for item in attempt.inline_table_assets],
+                    ],
+                    asset_profile=asset_profile,
+                )
                 return _springer_html_payload_from_attempt(
                     attempt,
                     trace_markers=[fulltext_marker("springer", "ok", route="html")],
@@ -1391,7 +1442,12 @@ class SpringerClient(ProviderClient):
         }
 
         def run_html(_state: ProviderWaterfallState) -> RawFulltextPayload:
-            attempt = self._prepare_html_attempt(doi, metadata, context=context)
+            attempt = self._prepare_html_attempt(
+                doi,
+                metadata,
+                context=context,
+                asset_profile=asset_profile,
+            )
             attempt_context["attempt"] = attempt
             attempt_context["response_url"] = attempt.response_url
             attempt_context["html_text"] = attempt.html_text

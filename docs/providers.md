@@ -295,6 +295,7 @@ resolve
   - 优先使用 merged metadata 中的 `landing_page_url`，缺失时回退 DOI 解析。
   - 对外 provider/source 保持 `springer`、`springer_html`、`springer_pdf` 不变；内部先用 `springer_site_family_profile()` 将 route 分类为 `nature`、`springerlink` 或 `bmc`，并把 family 写入 diagnostics，避免三类站点逻辑继续以隐式条件混合。
   - HTML 成功时公开 `source="springer_html"`；PDF fallback 成功时公开 `source="springer_pdf"`。
+  - Nature Extended Data Table / Figure 归入 supplementary scope：`body` 不为扩展表抓取表格页或生成缺失占位符，`all` 才补全并下载扩展表图；展示图表编号不必等于 URL 页面序号。老版 `Figa_ESM` 表图须匹配表格页标题、论文回链、图片中的论文 DOI 和表格内容容器。表格图片保留图片形式及对应 Markdown 引用，扩展图复用已发现图片 URL 与现有图片下载流程；已发现而未取得的扩展资产保留来源和结构化失败证据，进入统一验收。
   - Nature/Springer 的 `Client Challenge` 与 `_fs-ch-` 壳页按 access boundary fail closed，不会生成 provisional abstract/metadata article；若 direct PDF 也不可用，最终保留 `no_access`。
   - Springer 生产路径直接调用 canonical split owner：DOM/metadata、payload/Markdown、assets、authors 分别由 `_springer_dom`、`_springer_markdown`、`_springer_assets`、`_springer_authors` 负责，通用编号引用由 `_html_references` 负责。`_springer_html` 仅保留静态 compatibility re-export，不承担编排或 patch seam。
 - `wiley`
@@ -303,6 +304,8 @@ resolve
   - 不做额外 fast HTML preflight，避免低成功率路径增加固定开销。
   - selected-browser HTML 正文首轮使用快速路径并阻断 media 资源；challenge、访问拦截、摘要页或正文抽取不足时回退到保守等待参数。
   - 当前 Wiley 页头中的 `Institutional login` 仍是通用 access-gate 信号；只有 `.article-section__content` 等正文 DOM 已达到稳定实质正文阈值时，selected-browser 才把这类导航文本交给后续正文感知验收，而不在前 1,000 字符摘要阶段提前判为 paywall。HTTP 402/404、摘要重定向以及 challenge/验证码继续早期 fail closed。Wiley 主文档 401/403 则只在正文 selector 连续两次稳定、citation meta/canonical/`.epub-doi` 中的 DOI 与请求精确匹配，且没有明确 no-access 或 Wiley datalayer 阻断时，才暂时不以状态本身拒绝该候选；后续 Markdown 与全文 availability 仍必须通过，结果和 trace 保留真实 401/403。正文未达到阈值时不享受该否决，现有付费墙文本以及下游 Wiley datalayer 的 `item_access=no`、`format_viewed=abstract` 等信号仍可拒绝。
+  - Wiley `kind=formula` 的已加载公式位图只要求自然宽高大于零，并精确匹配规范化目标 URL 与实际 `currentSrc/src`；目标缺失时不替用页面其它图片。公式图片和要求目标匹配的 Wiley 正文 figure 导航等待 `commit` 后，必须先通过现有图片就绪判断，再读取并校验导航响应或沿用页面 fetch / canvas 导出；不再等待图片文档的 `DOMContentLoaded`。正文 figure 仍要求图片已加载完成、实际目标 URL 精确匹配且宽高至少 80×80；未知类型和其它 provider 保持原有尺寸门槛与导航策略。
+  - Wiley `kind=figure` 默认优先获取出版社提供的高清候选；文章页导出、导航后 DOM 就绪与 canvas 导出只接受实际 `currentSrc/src` 精确匹配当前目标的图片，避免窄视口预览提前成功。高清获取失败后允许预览回退，保留真实来源、尺寸和高清失败证据，并标记 `download_tier=preview`、`preview_accepted=false`，由统一 acceptance 报告质量降级。
   - Atypon/Wiley figure label 只从显式 label、figure DOM id、图片 URL basename 或 caption 起始 `Figure N` 推断；caption 正文里的 `Figure N` 交叉引用不能覆盖当前图号。
   - `WILEY_TDM_CLIENT_TOKEN` 是官方 TDM API PDF lane；缺失时仍可继续尝试 browser PDF/ePDF，配置后会在 browser PDF/ePDF fallback 失败或 browser runtime 不可用时继续尝试 TDM PDF。TDM URL template 声明在 `ProviderSpec.api_url_templates`，provider 只负责填充 DOI。
   - Atypon 默认 PDF/ePDF 路径模板只在 `provider_catalog.ATYPON_DEFAULT_PDF_PATH_TEMPLATES` 维护；Wiley 在此基础上追加 `pdfdirect` / `wol1` 专属模板。

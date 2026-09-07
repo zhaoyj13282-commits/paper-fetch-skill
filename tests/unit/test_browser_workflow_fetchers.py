@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
 import threading
+
+import pytest
 from unittest import mock
 
 from paper_fetch.providers import browser_workflow
@@ -542,3 +545,504 @@ def test_file_fetcher_forwards_explicit_asset_referer() -> None:
         },
         timeout=60000,
     )
+
+
+@pytest.mark.parametrize("provider", ["wiley", "science", None])
+@pytest.mark.parametrize("size", [(22, 15), (11, 17), (519, 112)])
+def test_wiley_formula_policy_is_per_call(provider, size, tmp_path) -> None:
+    from paper_fetch.providers.browser_runtime.types import BrowserRuntimeConfig
+
+    config = (
+        BrowserRuntimeConfig(provider, "10.1029/test", tmp_path, True, None)
+        if provider
+        else None
+    )
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+        browser_options=fetcher_context.BrowserDocumentFetcherOptions(
+            runtime_config=config
+        ),
+    )
+    page = mock.Mock()
+    url = "https://example.test/image.png"
+    calls = []
+
+    def evaluate(script, args):
+        calls.append(args)
+        width, height = size
+        accepted = args[3] or (width >= args[1] and height >= args[2])
+        return {
+            "found": True,
+            "ok": accepted,
+            "reason": "target_image_not_loaded",
+            "url": url,
+            "contentType": "image/png",
+            "bodyB64": base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode(),
+            "width": width,
+            "height": height,
+        }
+
+    page.goto.return_value = None
+    page.evaluate.side_effect = evaluate
+    # End unsuccessful polling without spending the real download budget.
+    page.wait_for_timeout.side_effect = RuntimeError("stop test polling")
+    fetcher._page = page
+    with (
+        mock.patch.object(fetcher, "_ensure_page", return_value=page),
+        mock.patch.object(fetcher, "_sync_context_cookies"),
+        mock.patch.object(fetcher, "_warm_seed_urls"),
+        mock.patch.object(fetcher, "_payload_from_page_fetch_url", return_value=None),
+        mock.patch.object(fetcher, "_payload_from_context_request", return_value=None),
+        mock.patch.object(fetcher, "_wait_for_primary_image", return_value=None),
+    ):
+        for asset in ({"kind": "formula"}, {"kind": "figure"}, {}):
+            calls.clear()
+            page.wait_for_timeout.reset_mock()
+            result = fetcher(url, asset)
+            small = provider == "wiley" and asset.get("kind") == "formula"
+            target_match = provider == "wiley" and asset.get("kind") == "figure"
+            assert all(args == [url, 80, 80, small, target_match] for args in calls)
+            assert (result is not None) == (small or size == (519, 112))
+            if result is not None:
+                assert result["dimensions"] == {"width": size[0], "height": size[1]}
+                page.wait_for_timeout.assert_not_called()
+            assert (fetcher._min_width, fetcher._min_height) == (80, 80)
+
+
+@pytest.mark.parametrize("size", [(22, 15), (11, 17), (519, 112)])
+def test_small_formula_policy_reaches_readiness_and_canvas(size) -> None:
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+    )
+    page = mock.Mock()
+    fetcher._page = page
+    url = "https://example.test/formula.png"
+    width, height = size
+    info = {"ready": True, "src": url, "width": width, "height": height}
+    page.evaluate.side_effect = [
+        info,
+        {
+            "ok": True,
+            "url": url,
+            "width": width,
+            "height": height,
+            "bodyB64": base64.b64encode(b"\x89PNG\r\n\x1a\nformula").decode(),
+        },
+    ]
+    with (
+        mock.patch.object(
+            fetcher, "_payload_from_warmed_article_image", return_value=None
+        ) as warm,
+        mock.patch.object(fetcher, "_payload_from_page_fetch_url", return_value=None),
+        mock.patch.object(fetcher, "_payload_from_context_request", return_value=None),
+        mock.patch.object(
+            fetcher, "_payload_from_navigation_response", return_value=None
+        ),
+    ):
+        result = fetcher._fetch_with_page(url, allow_small_formula=True)
+    assert result["dimensions"] == {"width": width, "height": height}
+    assert page.goto.call_args.kwargs["wait_until"] == "commit"
+    assert warm.call_args.kwargs["allow_small_formula"] is True
+    assert page.evaluate.call_args_list[0].args[1] == [80, 80, url, True, False]
+    assert page.evaluate.call_args_list[1].args[1] == [url, 80, 80, True, False]
+    page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.parametrize("path", ["article", "canvas"])
+@pytest.mark.parametrize("invalid", ["placeholder", "non_image"])
+@pytest.mark.parametrize(
+    "policy", [{"allow_small_formula": True}, {"require_target_match": True}]
+)
+def test_small_formula_keeps_payload_validation(path, invalid, policy) -> None:
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+    )
+    url = "https://example.test/formula.png"
+    page = mock.Mock()
+    page.evaluate.return_value = {
+        "ok": True,
+        "found": True,
+        "url": "https://example.test/blank.gif" if invalid == "placeholder" else url,
+        "contentType": "image/png",
+        "width": 22,
+        "height": 15,
+        "bodyB64": base64.b64encode(
+            b"<html>Access denied</html>"
+            if invalid == "non_image"
+            else b"\x89PNG\r\n\x1a\nimage"
+        ).decode(),
+    }
+    if path == "article":
+        result = fetcher._payload_from_warmed_article_image(page, url, **policy)
+    else:
+        result = fetcher._payload_from_loaded_image(page, {"src": url}, **policy)
+    assert result is None
+
+
+@pytest.mark.parametrize("path", ["article", "canvas", "readiness"])
+@pytest.mark.parametrize(
+    "reason,found,width,height",
+    [
+        ("target_image_not_loaded", True, 22, 15),
+        ("target_image_not_loaded", True, 0, 15),
+        ("target_image_not_loaded", True, 22, 0),
+        ("target_image_not_found", False, 640, 480),
+    ],
+)
+def test_small_formula_rejects_unready_or_missing_target(
+    path, reason, found, width, height
+) -> None:
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+    )
+    url = "https://example.test/formula.png"
+    page = mock.Mock()
+    page.url = "https://example.test/article"
+    page.evaluate.return_value = {
+        "ok": False,
+        "ready": False,
+        "found": found,
+        "reason": reason,
+        "width": width,
+        "height": height,
+        "url": url,
+        "imageCount": 2,
+    }
+    page.wait_for_timeout.side_effect = RuntimeError("stop test polling")
+    with mock.patch.object(fetcher, "_payload_from_page_fetch_url", return_value=None):
+        if path == "article":
+            result = fetcher._payload_from_warmed_article_image(
+                page, url, allow_small_formula=True
+            )
+        elif path == "canvas":
+            result = fetcher._payload_from_loaded_image(
+                page, {"src": url}, allow_small_formula=True
+            )
+        else:
+            result = fetcher._wait_for_primary_image(
+                page, url, allow_small_formula=True
+            )
+    assert result is None
+    if path == "article" and not found:
+        page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.parametrize("provider", ["wiley", "science", None])
+def test_formula_navigation_policy_is_per_call(provider, tmp_path) -> None:
+    from paper_fetch.providers.browser_runtime.types import BrowserRuntimeConfig
+
+    config = (
+        BrowserRuntimeConfig(provider, "10.1029/test", tmp_path, True, None)
+        if provider
+        else None
+    )
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+        browser_options=fetcher_context.BrowserDocumentFetcherOptions(
+            runtime_config=config
+        ),
+    )
+    url = "https://example.test/formula.png"
+    page = mock.Mock()
+    fetcher._page = page
+    body = b"\x89PNG\r\n\x1a\nformula"
+    response = _BrowserResponse(url, body, "image/png")
+    page.goto.return_value = response
+    with (
+        mock.patch.object(fetcher, "_ensure_page", return_value=page),
+        mock.patch.object(fetcher, "_sync_context_cookies"),
+        mock.patch.object(fetcher, "_warm_seed_urls"),
+        mock.patch.object(
+            fetcher, "_payload_from_warmed_article_image", return_value=None
+        ),
+        mock.patch.object(fetcher, "_payload_from_page_fetch_url", return_value=None),
+        mock.patch.object(fetcher, "_payload_from_context_request", return_value=None),
+        mock.patch.object(
+            fetcher,
+            "_wait_for_primary_image",
+            return_value={"ready": True, "src": url, "width": 22, "height": 15},
+        ) as readiness,
+        mock.patch.object(response, "body", wraps=response.body) as response_body,
+    ):
+        order = mock.Mock()
+        order.attach_mock(page.goto, "goto")
+        order.attach_mock(readiness, "readiness")
+        order.attach_mock(response_body, "body")
+        for asset in ({"kind": "formula"}, {"kind": "figure"}, {}, {"kind": "formula"}):
+            order.reset_mock()
+            result = fetcher(url, asset)
+            small = provider == "wiley" and asset.get("kind") == "formula"
+            assert result["body"] == body
+            figure = provider == "wiley" and asset.get("kind") == "figure"
+            assert page.goto.call_args.kwargs["wait_until"] == (
+                "commit" if small or figure else "domcontentloaded"
+            )
+            assert 0 < page.goto.call_args.kwargs["timeout"] <= 10000
+            assert [call[0] for call in order.mock_calls] == (
+                ["goto", "readiness", "body"] if small or figure else ["goto", "body"]
+            )
+            if small:
+                assert readiness.call_args.kwargs["allow_small_formula"] is True
+            if figure:
+                assert readiness.call_args.kwargs["allow_small_formula"] is False
+                assert readiness.call_args.kwargs["require_target_match"] is True
+                assert (fetcher._min_width, fetcher._min_height) == (80, 80)
+            assert fetcher._active_image_fetch_budget is None
+
+
+@pytest.mark.parametrize("ready", [False, True])
+@pytest.mark.parametrize("navigation", ["image", "non_image", "placeholder"])
+@pytest.mark.parametrize("figure", [False, True])
+def test_formula_navigation_requires_readiness_and_valid_response(
+    ready, navigation, figure
+) -> None:
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+    )
+    if figure:
+        from types import SimpleNamespace
+
+        fetcher._browser_config = SimpleNamespace(provider="wiley")
+    url = "https://example.test/formula.png"
+    page = mock.Mock()
+    fetcher._page = page
+    response = _BrowserResponse(
+        "https://example.test/blank.gif" if navigation == "placeholder" else url,
+        b"<html>Access denied</html>"
+        if navigation == "non_image"
+        else b"\x89PNG\r\n\x1a\nformula",
+        "text/html" if navigation == "non_image" else "image/png",
+    )
+    page.goto.return_value = response
+    page.evaluate.return_value = {
+        "ready": ready,
+        "src": url,
+        "width": 1200 if figure else 22,
+        "height": 900 if figure else 15,
+    }
+    page.wait_for_timeout.side_effect = RuntimeError("stop test polling")
+    with (
+        mock.patch.object(
+            fetcher, "_payload_from_warmed_article_image", return_value=None
+        ),
+        mock.patch.object(fetcher, "_payload_from_page_fetch_url", return_value=None),
+        mock.patch.object(fetcher, "_payload_from_context_request", return_value=None),
+        mock.patch.object(
+            fetcher, "_payload_from_page_fetch", return_value=None
+        ) as export,
+        mock.patch.object(response, "body", wraps=response.body) as response_body,
+    ):
+        result = fetcher._fetch_with_page(
+            url,
+            allow_small_formula=not figure,
+            require_target_match=figure,
+        )
+    assert (result is not None) == (ready and navigation == "image")
+    if not ready:
+        response_body.assert_not_called()
+        export.assert_not_called()
+    else:
+        response_body.assert_called_once()
+        assert export.call_count == (navigation != "image")
+
+
+@pytest.mark.parametrize(
+    "recovery", ["article", "fetch", "request", "navigation", "canvas"]
+)
+def test_wiley_figure_target_match_recovery_order(recovery) -> None:
+    url = "https://example.test/full.png"
+    body = b"\x89PNG\r\n\x1a\nfull"
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {}, seed_urls_getter=lambda: []
+    )
+    page = mock.Mock()
+    fetcher._page = page
+    rendered = {
+        "ok": True,
+        "found": True,
+        "url": url,
+        "contentType": "image/png",
+        "bodyB64": base64.b64encode(body).decode(),
+        "width": 1200,
+        "height": 900,
+    }
+    info = {"ready": True, "src": url, "width": 1200, "height": 900}
+    page.evaluate.side_effect = [
+        rendered if recovery == "article" else {"found": False},
+        info,
+        rendered,
+    ]
+    payload = {"body": body, "url": url}
+    page.goto.return_value = (
+        _BrowserResponse("https://example.test/redirected-full.png", body, "image/png")
+        if recovery == "navigation"
+        else None
+    )
+    with (
+        mock.patch.object(
+            fetcher,
+            "_payload_from_page_fetch_url",
+            return_value=payload if recovery == "fetch" else None,
+        ) as fetch,
+        mock.patch.object(
+            fetcher,
+            "_payload_from_context_request",
+            return_value=payload if recovery == "request" else None,
+        ) as request,
+    ):
+        result = fetcher._fetch_with_page(url, require_target_match=True)
+    assert result["body"] == body
+    assert fetch.call_count == (
+        0 if recovery == "article" else 2 if recovery == "canvas" else 1
+    )
+    assert request.call_count == (recovery not in {"article", "fetch"})
+    assert page.goto.call_count == (recovery in {"navigation", "canvas"})
+    assert page.evaluate.call_args_list[0].args[1] == [url, 80, 80, False, True]
+    if recovery == "canvas":
+        assert page.evaluate.call_args_list[1].args[1] == [80, 80, url, False, True]
+        assert page.evaluate.call_args_list[2].args[1] == [url, 80, 80, False, True]
+    if recovery == "navigation":
+        assert result["url"] == "https://example.test/redirected-full.png"
+    page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.browser
+def test_wiley_picture_uses_loaded_target_at_both_viewports(monkeypatch):
+    import json
+    import os
+    from pathlib import Path
+
+    from paper_fetch.extraction.image_payloads import image_dimensions_from_bytes
+    from paper_fetch.providers.browser_workflow.fetchers.scripts import (
+        _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT,
+        _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT,
+    )
+    from tests._environment import PRESERVED_CAMOUFOX_EXECUTABLE_ENV_VAR
+
+    executable = os.environ.get(PRESERVED_CAMOUFOX_EXECUTABLE_ENV_VAR)
+    if not executable or not Path(executable).is_file():
+        pytest.skip("requires the existing local Camoufox executable")
+    camoufox = pytest.importorskip("camoufox.sync_api")
+    from camoufox import DefaultAddons, utils
+
+    # Pytest isolates the managed cache; read the existing executable's version
+    # without asking Camoufox to discover or install a runtime in that cache.
+    version_file = next(
+        parent / "version.json"
+        for parent in Path(executable).parents
+        if (parent / "version.json").is_file()
+    )
+    version = json.loads(version_file.read_text())["version"]
+    monkeypatch.setattr(utils, "installed_verstr", lambda: version)
+
+    fixtures = Path(__file__).parents[1] / "fixtures" / "golden_criteria"
+    full = (
+        fixtures / "10.1371_journal.pone.0015338/body_assets/pone.0015338.g002.png"
+    ).read_bytes()
+    preview = (
+        fixtures / "10.1063_5.0129134/body_assets/m_125205_1_f4.jpeg"
+    ).read_bytes()
+    target = "https://example.test/full.png"
+    html = '<picture><source media="(min-width: 1600px)" srcset="/full.png"><img id="target" src="/preview.jpg"></picture>'
+    fetcher = image_fetchers._SharedBrowserImageDocumentFetcher(
+        browser_context_seed_getter=lambda: {}, seed_urls_getter=lambda: []
+    )
+    fake = mock.Mock()
+    fake.evaluate.return_value = {"ready": True}
+    fetcher._wait_for_primary_image(fake, target, require_target_match=True)
+    readiness_script = fake.evaluate.call_args.args[0]
+
+    def route_asset(route):
+        url = route.request.url
+        if url.endswith("/article"):
+            route.fulfill(body=html, content_type="text/html")
+        else:
+            route.fulfill(
+                body=full if url == target else preview,
+                content_type="image/png" if url == target else "image/jpeg",
+            )
+
+    with camoufox.Camoufox(
+        headless=True, executable_path=executable, exclude_addons=list(DefaultAddons)
+    ) as browser:
+        for width in (1280, 1920):
+            context = browser.new_context(viewport={"width": width, "height": 1080})
+            context.route("https://example.test/**", route_asset)
+            page = context.new_page()
+            page.goto("https://example.test/article")
+            page.locator("#target").evaluate("(image) => image.decode()")
+            expected_src = (
+                target if width == 1920 else "https://example.test/preview.jpg"
+            )
+            assert (
+                page.locator("#target").evaluate("(image) => image.currentSrc")
+                == expected_src
+            )
+            fetcher._page = page
+            fetcher._context = context
+            with mock.patch.object(
+                page,
+                "wait_for_timeout",
+                side_effect=AssertionError("unexpected image wait"),
+            ):
+                warmed = fetcher._payload_from_warmed_article_image(
+                    page, target, require_target_match=True
+                )
+                assert (warmed is not None) == (width == 1920)
+                payload = fetcher._fetch_with_page(target, require_target_match=True)
+            assert payload["url"] == target
+            assert image_dimensions_from_bytes(payload["body"]) == (2068, 470)
+            # A target declared only in picture sources is also rejected by
+            # post-navigation readiness and the loaded-image canvas script.
+            page.goto("https://example.test/article")
+            page.locator("#target").evaluate("(image) => image.decode()")
+            for script in (
+                _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT,
+                _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT,
+            ):
+                result = page.evaluate(script, [target, 80, 80, False, True])
+                assert bool(result.get("ok")) == (width == 1920)
+            ready = page.evaluate(readiness_script, [80, 80, target, False, True])
+            assert ready["ready"] == (width == 1920)
+            if width == 1920:
+                page.evaluate("""async () => {
+                    const other = new Image(); other.src = '/other.jpg';
+                    document.body.append(other); await other.decode();
+                }""")
+                for mode in (
+                    "incomplete",
+                    "zero_width",
+                    "zero_height",
+                    "tiny",
+                    "empty",
+                    "missing",
+                ):
+                    page.locator("#target").evaluate(
+                        """(image, mode) => {
+                        for (const key of ['complete', 'naturalWidth', 'naturalHeight']) delete image[key];
+                        const changes = {incomplete: ['complete', false], zero_width: ['naturalWidth', 0],
+                            zero_height: ['naturalHeight', 0], tiny: ['naturalWidth', 22]};
+                        if (changes[mode]) Object.defineProperty(image, changes[mode][0],
+                            {value: changes[mode][1], configurable: true});
+                        if (mode === 'missing') image.remove();
+                    }""",
+                        mode,
+                    )
+                    candidate = "" if mode == "empty" else target
+                    for script in (
+                        _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT,
+                        _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT,
+                    ):
+                        result = page.evaluate(script, [candidate, 80, 80, False, True])
+                        assert not result.get("ok"), (mode, result)
+                    ready = page.evaluate(
+                        readiness_script, [80, 80, candidate, False, True]
+                    )
+                    assert not ready["ready"], (mode, ready)
+            context.close()

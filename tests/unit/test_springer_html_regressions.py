@@ -797,8 +797,10 @@ class SpringerHtmlRegressionTests(unittest.TestCase):
 
         self.assertTrue(
             any(
-                asset.get("url", "").endswith("/figures/5")
-                for asset in supplementary_assets
+                asset.get("figure_page_url", "").endswith("/figures/5")
+                and asset.get("kind") == "figure"
+                and asset.get("section") == "supplementary"
+                for asset in assets
             )
         )
         self.assertTrue(

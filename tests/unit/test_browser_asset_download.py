@@ -1480,3 +1480,120 @@ class BrowserWorkflowAssetDownloadTests(TestCase):
         self.assertIs(result, previous)
         mocked_warm.assert_not_called()
         mocked_download_assets.assert_not_called()
+
+
+def test_wiley_split_preview_preserves_fidelity_and_full_failure(tmp_path):
+    from paper_fetch.models.builders import _asset_from_entry
+    from paper_fetch.quality.assets import build_asset_quality_summary
+    from paper_fetch.workflow.acceptance import evaluate_fetch_acceptance
+    from tests.unit.test_workflow_acceptance import _envelope
+
+    full = "https://example.test/full.png"
+    preview = "https://example.test/preview.png"
+    redirected = "https://example.test/preview-redirect.png"
+    figure = {
+        "kind": "figure",
+        "heading": "Figure 1",
+        "url": preview,
+        "preview_url": preview,
+        "full_size_url": full,
+        "section": "body",
+    }
+    for status in (403, 404):
+        for preview_ok in (True, False):
+            transport = mock.Mock()
+            calls = []
+
+            def request(
+                method,
+                url,
+                *,
+                calls=calls,
+                preview_ok=preview_ok,
+                status=status,
+                **kwargs,
+            ):
+                calls.append(url)
+                if url == preview and preview_ok:
+                    return {
+                        "status_code": 200,
+                        "headers": {"content-type": "image/png"},
+                        "body": png_header(1200, 900),
+                        "url": redirected,
+                    }
+                return {
+                    "status_code": status,
+                    "headers": {"content-type": "text/html"},
+                    "body": b"<html>Access denied</html>",
+                    "url": url,
+                }
+
+            transport.request.side_effect = request
+            image_fetcher = mock.Mock(return_value=None)
+            image_fetcher.requires_caller_thread = True
+            image_fetcher.failure_for.return_value = {
+                "status": status,
+                "reason": "http_error",
+            }
+            plan = BrowserAssetDownloadPlan(
+                article_id="10.1029/test",
+                output_dir=tmp_path,
+                asset_profile="body",
+                body_assets=[figure],
+                supplementary_assets=[],
+                candidate_builder=lambda *args, **kwargs: [full, preview],
+            )
+            recovery = BrowserAssetRecoveryContext(
+                runtime=None,
+                provider="wiley",
+                user_agent="test-agent",
+                browser_context_seed={},
+                browser_cookies=[],
+                active_seed_urls=[],
+            )
+            result = run_browser_asset_download_attempt(
+                plan,
+                recovery,
+                image_fetcher_factory=lambda image_fetcher=image_fetcher, **kw: (
+                    image_fetcher
+                ),
+                file_fetcher_factory=lambda **kw: None,
+                download_settings={
+                    "transport": transport,
+                    "serial_browser_assets": True,
+                },
+                deps=browser_workflow_deps(),
+            )
+            assert calls.index(full) < calls.index(preview)
+            if not preview_ok:
+                assert result.body_results == []
+                assert len(result.failures) == 1
+                assert (
+                    result.failures[0]["recovery_attempts"][-1]["stage"]
+                    == "preview_fallback"
+                )
+                continue
+            assert result.failures == []
+            downloaded = result.body_results[0]
+            assert downloaded["download_tier"] == "preview"
+            assert downloaded["preview_accepted"] is False
+            assert downloaded["source_url"] == redirected
+            assert downloaded["download_url"] == preview
+            assert (downloaded["width"], downloaded["height"]) == (1200, 900)
+            assert any(
+                a.get("status") == status for a in downloaded["recovery_attempts"][:-1]
+            )
+            asset = _asset_from_entry(
+                downloaded, kind="figure", heading_fallback="Figure"
+            )
+            assert asset.preview_accepted is False
+            envelope = _envelope(assets=[asset])
+            summary = build_asset_quality_summary(
+                [asset], asset_profile="body", archive_enabled=True
+            )
+            assert summary.fallback_preview == 1
+            assert summary.accepted_preview == 0
+            envelope.quality.asset_summary = summary
+            report = evaluate_fetch_acceptance(envelope, asset_profile="body")
+            assert report.overall.value == "degraded"
+            assert "asset_fidelity_degraded" in report.asset.issue_codes

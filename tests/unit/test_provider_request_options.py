@@ -1485,7 +1485,7 @@ class ProviderRequestOptionsTests(unittest.TestCase):
         fetcher._sync_context_cookies = mock.Mock()
         fetcher._warm_seed_urls = mock.Mock()
         fetcher._fetch_with_page = mock.Mock(
-            side_effect=lambda current_url: (
+            side_effect=lambda current_url, *, allow_small_formula=False, require_target_match=False: (
                 fetcher._record_failure(
                     current_url,
                     status=403,

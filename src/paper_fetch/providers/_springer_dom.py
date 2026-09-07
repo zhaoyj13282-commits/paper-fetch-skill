@@ -531,6 +531,12 @@ def _extract_asset_html_scope_fragments(
     source_data_html = _springer_merge_scope_fragments(
         [*supplementary_sections, *source_data_sections]
     )
+    # Extended Data can be nested inside main-content on older Nature pages.
+    body_soup = BeautifulSoup(body_html, choose_parser())
+    body_supplementary, body_source_data = _springer_collect_asset_sections(body_soup)
+    for section in [*body_supplementary, *body_source_data]:
+        section.decompose()
+    body_html = str(body_soup)
     return body_html, supplementary_html, source_data_html
 
 
@@ -891,6 +897,7 @@ def _springer_table_image_candidate_score(
     node: Tag | None,
     table_number: str,
     from_meta: bool,
+    verified_legacy_table_image: bool = False,
 ) -> int:
     if not SPRINGER_TABLE_IMAGE_EXTENSION_PATTERN.search(url):
         return -1
@@ -913,6 +920,7 @@ def _springer_table_image_candidate_score(
         number_matches
         or (is_esm_mediaobject and has_table_semantics)
         or (is_table_context and has_table_semantics)
+        or (is_table_context and verified_legacy_table_image)
     ):
         return -1
     if from_meta and not (

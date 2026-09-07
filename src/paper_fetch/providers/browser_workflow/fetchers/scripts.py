@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT = """
-([targetUrl, minWidth, minHeight]) => {
+([targetUrl, minWidth, minHeight, allowSmallFormula = false, requireTargetMatch = false]) => {
   const normalizeUrl = (value) => {
+    if ((allowSmallFormula || requireTargetMatch) && !value) return '';
     try {
       return new URL(String(value || ''), document.baseURI).href;
     } catch (error) {
@@ -34,14 +35,14 @@ _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT = """
   const normalizedTarget = normalizeUrl(targetUrl);
   const loadedImages = Array.from(document.images || []).filter((image) =>
     image.complete
-    && image.naturalWidth >= minWidth
-    && image.naturalHeight >= minHeight
+    && image.naturalWidth >= (allowSmallFormula ? 1 : minWidth)
+    && image.naturalHeight >= (allowSmallFormula ? 1 : minHeight)
   );
   const image = loadedImages.find((candidate) =>
     normalizedTarget
     && normalizeUrl(candidate.currentSrc || candidate.src || '') === normalizedTarget
-  ) || loadedImages
-    .sort((left, right) => (right.naturalWidth * right.naturalHeight) - (left.naturalWidth * left.naturalHeight))[0];
+  ) || (!(allowSmallFormula || requireTargetMatch) && loadedImages
+    .sort((left, right) => (right.naturalWidth * right.naturalHeight) - (left.naturalWidth * left.naturalHeight))[0]);
   if (!image) {
     return {
       ok: false,
@@ -116,8 +117,9 @@ _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT = """
 
 
 _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT = """
-([targetUrl, minWidth, minHeight]) => {
+([targetUrl, minWidth, minHeight, allowSmallFormula = false, requireTargetMatch = false]) => {
   const normalizeUrl = (value) => {
+    if ((allowSmallFormula || requireTargetMatch) && !value) return '';
     try {
       return new URL(String(value || ''), document.baseURI).href;
     } catch (error) {
@@ -173,7 +175,9 @@ _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT = """
   const normalizedTarget = normalizeUrl(targetUrl);
   const images = Array.from(document.images || []);
   const image = images.find((candidate) =>
-    normalizedTarget && imageUrls(candidate).includes(normalizedTarget)
+    normalizedTarget && ((allowSmallFormula || requireTargetMatch)
+      ? normalizeUrl(candidate.currentSrc || candidate.src) === normalizedTarget
+      : imageUrls(candidate).includes(normalizedTarget))
   );
   if (!image) {
     return {
@@ -195,8 +199,8 @@ _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT = """
   const chosenUrl = normalizeUrl(image.currentSrc || image.src || normalizedTarget || document.location.href);
   if (
     !image.complete
-    || image.naturalWidth < minWidth
-    || image.naturalHeight < minHeight
+    || image.naturalWidth < (allowSmallFormula ? 1 : minWidth)
+    || image.naturalHeight < (allowSmallFormula ? 1 : minHeight)
   ) {
     return {
       ok: false,

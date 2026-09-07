@@ -113,12 +113,9 @@ def _asset_from_entry(
         normalize_text(entry.get("download_tier")).lower() == "preview"
         and not preview_accepted
     ):
-        from ..extraction.html.assets.dom import preview_dimensions_are_acceptable
+        from ..quality.assets import preview_asset_is_accepted
 
-        preview_accepted = preview_dimensions_are_acceptable(
-            _optional_int(entry.get("width")) or 0,
-            _optional_int(entry.get("height")) or 0,
-        )
+        preview_accepted = preview_asset_is_accepted(entry)
     return Asset(
         kind=kind,
         heading=safe_text(entry.get("heading") or heading_fallback) or heading_fallback,

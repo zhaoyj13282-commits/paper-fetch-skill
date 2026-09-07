@@ -197,7 +197,19 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
                         normalized_url, reason="image_fetch_budget_exhausted"
                     )
                     return None
-                result = self._fetch_with_page(normalized_url)
+                result = self._fetch_with_page(
+                    normalized_url,
+                    allow_small_formula=bool(
+                        self._browser_config is not None
+                        and self._browser_config.provider == "wiley"
+                        and _asset.get("kind") == "formula"
+                    ),
+                    require_target_match=bool(
+                        self._browser_config is not None
+                        and self._browser_config.provider == "wiley"
+                        and _asset.get("kind") == "figure"
+                    ),
+                )
                 if result is not None:
                     return result
                 if attempt == 0:
@@ -253,7 +265,18 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
         budget = self._active_image_fetch_budget
         return budget if budget is not None else _ImageFetchBudget()
 
-    def _fetch_with_page(self, image_url: str) -> dict[str, Any] | None:
+    def _fetch_with_page(
+        self,
+        image_url: str,
+        *,
+        allow_small_formula: bool = False,
+        require_target_match: bool = False,
+    ) -> dict[str, Any] | None:
+        wait_for_image_before_body = allow_small_formula or bool(
+            require_target_match
+            and self._browser_config is not None
+            and self._browser_config.provider == "wiley"
+        )
         budget = self._active_budget()
         previous_budget: _ImageFetchBudget | None = self._active_image_fetch_budget
         self._active_image_fetch_budget = budget
@@ -262,7 +285,11 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
             if page is None:
                 return None
             warmed_article_payload = self._payload_from_warmed_article_image(
-                page, image_url, budget=budget
+                page,
+                image_url,
+                budget=budget,
+                allow_small_formula=allow_small_formula,
+                require_target_match=require_target_match,
             )
             if warmed_article_payload is not None:
                 return warmed_article_payload
@@ -285,10 +312,26 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
                 if timeout_ms <= 0:
                     return None
                 navigation_response = page.goto(
-                    image_url, wait_until="domcontentloaded", timeout=timeout_ms
+                    image_url,
+                    wait_until="commit"
+                    if wait_for_image_before_body
+                    else "domcontentloaded",
+                    timeout=timeout_ms,
                 )
             except Exception:
                 navigation_response = None
+
+            image_info = None
+            if wait_for_image_before_body:
+                image_info = self._wait_for_primary_image(
+                    page,
+                    image_url,
+                    budget=budget,
+                    allow_small_formula=allow_small_formula,
+                    require_target_match=require_target_match,
+                )
+                if image_info is None:
+                    return None
 
             direct_payload = self._payload_from_navigation_response(
                 navigation_response, fallback_url=image_url
@@ -296,11 +339,23 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
             if direct_payload is not None:
                 return direct_payload
 
-            image_info = self._wait_for_primary_image(page, image_url, budget=budget)
+            if not wait_for_image_before_body:
+                image_info = self._wait_for_primary_image(
+                    page,
+                    image_url,
+                    budget=budget,
+                    require_target_match=require_target_match,
+                )
             if image_info is None:
                 return None
 
-            return self._payload_from_page_fetch(page, image_info, budget=budget)
+            return self._payload_from_page_fetch(
+                page,
+                image_info,
+                budget=budget,
+                allow_small_formula=allow_small_formula,
+                require_target_match=require_target_match,
+            )
         finally:
             self._active_image_fetch_budget = previous_budget
 
@@ -310,6 +365,8 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
         image_url: str,
         *,
         budget: _ImageFetchBudget | None = None,
+        allow_small_formula: bool = False,
+        require_target_match: bool = False,
     ) -> dict[str, Any] | None:
         budget = budget or self._active_budget()
         image_src = normalize_text(str(image_url or ""))
@@ -320,7 +377,13 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
             try:
                 rendered = page.evaluate(
                     _ARTICLE_IMAGE_CANVAS_EXPORT_SCRIPT,
-                    [image_src, self._min_width, self._min_height],
+                    [
+                        image_src,
+                        self._min_width,
+                        self._min_height,
+                        allow_small_formula,
+                        require_target_match,
+                    ],
                 )
             except Exception:
                 return None
@@ -447,6 +510,8 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
         image_url: str,
         *,
         budget: _ImageFetchBudget | None = None,
+        allow_small_formula: bool = False,
+        require_target_match: bool = False,
     ) -> dict[str, Any] | None:
         deadline = (
             budget.loop_deadline(15.0)
@@ -458,13 +523,24 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
             try:
                 image_info = page.evaluate(
                     """
-                    ([minWidth, minHeight]) => {
+                    ([minWidth, minHeight, targetUrl, allowSmallFormula, requireTargetMatch]) => {
+                      const normalizeUrl = (value) => {
+                        if (!value) return '';
+                        try {
+                          return new URL(String(value), document.baseURI).href;
+                        } catch (error) {
+                          return String(value);
+                        }
+                      };
+                      const normalizedTarget = normalizeUrl(targetUrl);
                       const images = Array.from(document.images || []);
                       const best = images
                         .filter((image) =>
                           image.complete
-                          && image.naturalWidth >= minWidth
-                          && image.naturalHeight >= minHeight
+                          && image.naturalWidth >= (allowSmallFormula ? 1 : minWidth)
+                          && image.naturalHeight >= (allowSmallFormula ? 1 : minHeight)
+                          && (!(allowSmallFormula || requireTargetMatch) || (normalizedTarget
+                            && normalizeUrl(image.currentSrc || image.src) === normalizedTarget))
                         )
                         .sort((left, right) => (right.naturalWidth * right.naturalHeight) - (left.naturalWidth * left.naturalHeight))[0];
                       if (!best) {
@@ -486,7 +562,13 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
                       };
                     }
                     """,
-                    [self._min_width, self._min_height],
+                    [
+                        self._min_width,
+                        self._min_height,
+                        image_url,
+                        allow_small_formula,
+                        require_target_match,
+                    ],
                 )
             except Exception:
                 return None
@@ -678,6 +760,8 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
         image_info: Mapping[str, Any],
         *,
         budget: _ImageFetchBudget | None = None,
+        allow_small_formula: bool = False,
+        require_target_match: bool = False,
     ) -> dict[str, Any] | None:
         budget = budget or self._active_budget()
         payload = self._payload_from_page_fetch_url(
@@ -688,10 +772,20 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
         )
         if payload is not None:
             return payload
-        return self._payload_from_loaded_image(page, image_info)
+        return self._payload_from_loaded_image(
+            page,
+            image_info,
+            allow_small_formula=allow_small_formula,
+            require_target_match=require_target_match,
+        )
 
     def _payload_from_loaded_image(
-        self, page: Any, image_info: Mapping[str, Any]
+        self,
+        page: Any,
+        image_info: Mapping[str, Any],
+        *,
+        allow_small_formula: bool = False,
+        require_target_match: bool = False,
     ) -> dict[str, Any] | None:
         image_src = normalize_text(str(image_info.get("src") or ""))
         if not image_src:
@@ -699,7 +793,13 @@ class _SharedBrowserImageDocumentFetcher(_BaseBrowserDocumentFetcher):
         try:
             rendered = page.evaluate(
                 _LOADED_IMAGE_CANVAS_EXPORT_SCRIPT,
-                [image_src, self._min_width, self._min_height],
+                [
+                    image_src,
+                    self._min_width,
+                    self._min_height,
+                    allow_small_formula,
+                    require_target_match,
+                ],
             )
         except Exception:
             return None

@@ -410,6 +410,7 @@ def _annotate_split_preview_fallback(
     *,
     direct_failures: list[dict[str, Any]],
     browser_failures: list[dict[str, Any]],
+    provider: str = "",
 ) -> dict[str, list[dict[str, Any]]]:
     assets = [dict(asset) for asset in list(result.get("assets") or [])]
     failures = [dict(failure) for failure in list(result.get("asset_failures") or [])]
@@ -418,6 +419,8 @@ def _annotate_split_preview_fallback(
         *((asset, True) for asset in assets),
         *((failure, False) for failure in failures),
     ]:
+        if provider == "wiley" and outcome.get("kind") != "figure":
+            continue
         direct_failure = _matching_failure(outcome, direct_failures)
         browser_failure = _matching_failure(outcome, browser_failures)
         browser_backend = normalize_text(
@@ -428,17 +431,20 @@ def _annotate_split_preview_fallback(
             )
         )
         attempts: list[dict[str, Any]] = []
-        if direct_failure is not None:
+        if direct_failure is not None and provider != "wiley":
             attempts.append(_attempt_from_failure("direct", direct_failure))
         if browser_failure is not None:
             attempts.append(
                 _attempt_from_failure(
-                    "browser",
+                    "full_size" if provider == "wiley" else "browser",
                     browser_failure,
                     browser_backend=browser_backend,
                 )
             )
         if recovered:
+            if provider == "wiley":
+                outcome["download_tier"] = "preview"
+                outcome["preview_accepted"] = False
             final_fetcher = normalize_text(
                 str(
                     outcome.get("final_fetcher")
@@ -451,6 +457,7 @@ def _annotate_split_preview_fallback(
                     key: value
                     for key, value in {
                         "stage": "preview_fallback",
+                        "provider": provider or None,
                         "browser_backend": browser_backend or None,
                         "content_type": outcome.get("content_type"),
                         "reason": "recovered",
@@ -874,11 +881,16 @@ def _run_browser_asset_download_attempt(
                 ),
                 **common_kwargs,
             )
-            if is_ieee_recovery:
+            if is_ieee_recovery or recovery.provider == "wiley":
                 preview_result = _annotate_split_preview_fallback(
                     preview_result,
                     direct_failures=eligible_failures,
-                    browser_failures=browser_failures,
+                    browser_failures=(
+                        list(merged_result.get("asset_failures") or [])
+                        if recovery.provider == "wiley"
+                        else browser_failures
+                    ),
+                    provider="wiley" if recovery.provider == "wiley" else "",
                 )
             return _merge_download_attempt_results(merged_result, preview_result)
 

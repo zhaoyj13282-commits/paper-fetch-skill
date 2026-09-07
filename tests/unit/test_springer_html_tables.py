@@ -588,9 +588,11 @@ class SpringerHtmlTableTests(unittest.TestCase):
             "header-86f1267ea01eccd46b530284be10585e.svg",
             attempt.markdown_text,
         )
-        self.assertFalse(
-            any(asset.get("kind") == "table" for asset in attempt.inline_table_assets)
+        self.assertEqual(len(attempt.inline_table_assets), 1)
+        self.assertEqual(
+            attempt.inline_table_assets[0]["source_url"], GENERIC_EXTENDED_TABLE_URL
         )
+        self.assertFalse(attempt.inline_table_assets[0].get("url"))
 
     def test_regular_table_does_not_use_image_asset_fallback(self) -> None:
         table_image_url = "https://media.springernature.com/full/table-1.png"
@@ -601,7 +603,7 @@ class SpringerHtmlTableTests(unittest.TestCase):
                     label="Table 1",
                     caption="Observed water yield at long-term lysimeter stations",
                     table_href="/articles/s41586-020-1941-5/tables/1",
-                ),
+                ).replace(b"Extended data figures and tables", b"Results"),
                 "url": GENERIC_EXTENDED_TABLE_LANDING_URL,
                 "status_code": 200,
             },
@@ -828,3 +830,243 @@ class SpringerOriginalFirstTests(unittest.TestCase):
                         "official_full_size_access_restricted",
                         downloaded.get("provenance", []),
                     )
+
+
+# Reduced from the verified nature13006 /tables/2 satellite page: the displayed
+# table number differs from the page number and the bitmap has a Figa_ESM name.
+NATURE13006_URL = "https://www.nature.com/articles/nature13006"
+NATURE13006_TABLE_IMAGE = (
+    "https://media.springernature.com/lw403/springer-static/image/"
+    "art%3A10.1038%2Fnature13006/MediaObjects/41586_2014_BFnature13006_Figa_ESM.jpg"
+)
+NATURE13006_TABLE_HTML = f"""
+<html><head><title>Extended Data Table 1 Sensitivity | Nature</title></head><body>
+<header><img src="{NATURE_HEADER_SVG_URL}"></header>
+<main><header><h1>Extended Data Table 1 Sensitivity</h1>
+<p class="c-article-satellite-subtitle">From: <a href="/articles/nature13006">Amazon forests</a></p></header>
+<div class="c-article-table-container"><div class="c-article-table-image">
+<img alt="" src="{NATURE13006_TABLE_IMAGE}"></div></div></main></body></html>
+"""
+
+
+def test_nature_legacy_table_image_requires_matching_page_and_article():
+    from paper_fetch.providers._springer_assets import extract_springer_table_image_url
+
+    url = NATURE13006_URL + "/tables/2"
+    assert (
+        extract_springer_table_image_url(
+            NATURE13006_TABLE_HTML, url, label="Extended Data Table 1", table_url=url
+        )
+        == NATURE13006_TABLE_IMAGE
+    )
+    for html, final_url in [
+        (
+            NATURE13006_TABLE_HTML.replace(
+                "Extended Data Table 1", "Extended Data Table 2"
+            ),
+            url,
+        ),
+        (NATURE13006_TABLE_HTML.replace("Extended Data Table 1", "Table 1"), url),
+        (NATURE13006_TABLE_HTML.replace("%2Fnature13006", "%2Fnature13376"), url),
+        (
+            NATURE13006_TABLE_HTML.replace(
+                'href="/articles/nature13006"', 'href="/articles/nature13376"'
+            ),
+            url,
+        ),
+        (
+            NATURE13006_TABLE_HTML.replace(
+                'class="c-article-table-container"', ""
+            ).replace('class="c-article-table-image"', ""),
+            url,
+        ),
+        (
+            NATURE13006_TABLE_HTML.replace(
+                NATURE13006_TABLE_IMAGE, NATURE_HEADER_SVG_URL
+            ),
+            url,
+        ),
+        (
+            NATURE13006_TABLE_HTML.replace("<main>", "<aside>").replace(
+                "</main>", "</aside>"
+            ),
+            url,
+        ),
+        (NATURE13006_TABLE_HTML, NATURE13006_URL + "/tables/3"),
+        (NATURE13006_TABLE_HTML, url.replace("nature13006", "nature13376")),
+    ]:
+        assert (
+            extract_springer_table_image_url(
+                html, final_url, label="Extended Data Table 1", table_url=url
+            )
+            is None
+        )
+
+
+def test_nature_body_all_scope_downloads_and_missing_evidence(tmp_path):
+    from paper_fetch.models import FetchEnvelope
+    from paper_fetch.providers import _springer_assets
+    from paper_fetch.quality.assets import build_asset_quality_summary
+    from paper_fetch.workflow.acceptance import evaluate_fetch_acceptance
+
+    metadata = {
+        "doi": "10.1038/nature13006",
+        "title": GENERIC_EXTENDED_TABLE_TITLE,
+        "landing_page_url": NATURE13006_URL,
+    }
+    article_html = (
+        SpringerHtmlTableTests()
+        ._article_with_inline_table(
+            label="Extended Data Table 1",
+            caption="Sensitivity",
+            table_href=NATURE13006_URL + "/tables/2",
+        )
+        .decode()
+        .replace(GENERIC_EXTENDED_TABLE_DOI, metadata["doi"])
+    )
+    body_table = """<h2>Results</h2><div class="c-article-table" data-test="inline-table"><figure>
+        <figcaption><b data-test="table-caption">Table 1 Body results</b></figcaption>
+        <a data-test="table-link" href="/articles/nature13006/tables/1">Full size table</a>
+        </figure></div>"""
+    extended_figure = """<div class="c-article-supplementary__item" id="Fig4">
+        <h3 class="c-article-supplementary__title"><a href="/articles/nature13006/figures/4"
+        data-supp-info-image="https://media.springernature.com/full/extended.png">Extended Data Figure 1 Forest</a></h3>
+        <p>Extended figure caption. <a href="/articles/nature13006#Fig4">Extended Data Fig. 1</a></p></div>"""
+    article_html = article_html.replace(
+        '<section data-title="Extended data',
+        body_table + '<section data-title="Extended data',
+    )
+    article_html = article_html.replace("</section>", extended_figure + "</section>")
+    # The body fixture also proves ordinary tables retain their page fetch.
+    for profile in ("body", "all", "none"):
+        for missing in (False, True):
+            out = tmp_path / f"{profile}-{missing}"
+            out.mkdir()
+            responses = {
+                NATURE13006_URL: {
+                    "body": article_html.encode(),
+                    "url": NATURE13006_URL,
+                    "headers": {"content-type": "text/html"},
+                    "status_code": 200,
+                },
+                NATURE13006_URL + "/tables/1": {
+                    "body": b"<html><figure><figcaption>Table 1 Body results</figcaption><table><tr><th>Metric</th><th>Value</th></tr><tr><td>Body</td><td>1</td></tr></table></figure></html>",
+                    "url": NATURE13006_URL + "/tables/1",
+                    "headers": {"content-type": "text/html"},
+                    "status_code": 200,
+                },
+            }
+            if profile == "all":
+                responses[NATURE13006_URL + "/tables/2"] = {
+                    "body": (
+                        NATURE13006_TABLE_HTML.replace(
+                            NATURE13006_TABLE_IMAGE, NATURE_HEADER_SVG_URL
+                        )
+                        if missing
+                        else NATURE13006_TABLE_HTML
+                    ).encode(),
+                    "url": NATURE13006_URL + "/tables/2",
+                    "headers": {"content-type": "text/html"},
+                    "status_code": 200,
+                }
+                for url, fixture, mime in [
+                    (
+                        NATURE13006_TABLE_IMAGE,
+                        golden_criteria_asset(
+                            "10.1063/5.0129134", "body_assets/m_125205_1_f4.jpeg"
+                        ),
+                        "image/jpeg",
+                    ),
+                    (
+                        "https://media.springernature.com/full/extended.png",
+                        golden_criteria_asset(
+                            "10.1371/journal.pone.0015338",
+                            "body_assets/pone.0015338.e003.png",
+                        ),
+                        "image/png",
+                    ),
+                ]:
+                    responses[url] = {
+                        "body": fixture.read_bytes(),
+                        "url": url,
+                        "headers": {"content-type": mime},
+                        "status_code": 200,
+                    }
+            transport = FakeTransport(responses)
+            client = springer_provider.SpringerClient(transport=transport, env={})
+            context = RuntimeContext(env={}, transport=transport, asset_profile=profile)
+            payload = client.fetch_raw_fulltext(
+                metadata["doi"], metadata, context=context
+            )
+            assert "Body" in payload.content.markdown_text
+            assets = payload.content.extracted_assets
+            result = client.download_related_assets(
+                metadata["doi"],
+                metadata,
+                payload,
+                out,
+                asset_profile=profile,
+                context=context,
+            )
+            if profile != "all":
+                assert not assets
+                assert not result["assets"] and not result["asset_failures"]
+                assert "Table body unavailable" not in payload.content.markdown_text
+                assert not payload.warnings
+                continue
+            assert len(assets) == 2
+            assert {a["kind"] for a in assets} == {"figure", "table"}
+            assert all(a["section"] == "supplementary" for a in assets)
+            assert len(result["assets"]) == (1 if missing else 2)
+            assert len(result["asset_failures"]) == int(missing)
+            if missing:
+                assert (
+                    result["asset_failures"][0]["source_url"]
+                    == NATURE13006_URL + "/tables/2"
+                )
+            article = client.to_article_model(
+                metadata,
+                payload,
+                downloaded_assets=result["assets"],
+                asset_failures=result["asset_failures"],
+                context=context,
+            )
+            summary = build_asset_quality_summary(
+                article.assets,
+                asset_failures=result["asset_failures"],
+                asset_profile=profile,
+                archive_enabled=True,
+            )
+            assert summary.failed == int(missing)
+            article.quality.asset_summary = summary
+            acceptance = evaluate_fetch_acceptance(
+                FetchEnvelope(
+                    doi=metadata["doi"],
+                    source=article.source,
+                    has_fulltext=True,
+                    content_kind="fulltext",
+                    has_abstract=True,
+                    article=article,
+                    quality=article.quality,
+                    trace=payload.trace,
+                    markdown=article.to_ai_markdown(max_tokens="full_text"),
+                ),
+                asset_profile=profile,
+                requested_outputs=["article", "markdown"],
+                expected_doi=metadata["doi"],
+            )
+            assert acceptance.asset.failed == int(missing)
+            assert acceptance.asset.status == ("degraded" if missing else "complete")
+            if missing:
+                assert acceptance.overall == "degraded"
+            if not missing:
+                rendered = article.to_ai_markdown(max_tokens="full_text")
+                table_asset = next(a for a in result["assets"] if a["kind"] == "table")
+                assert Path(table_asset["path"]).is_file()
+                assert table_asset["path"] in rendered
+            assert all(
+                "Extended Data" not in asset.get("heading", "")
+                for asset in _springer_assets.extract_html_assets(
+                    article_html, NATURE13006_URL, asset_profile="body"
+                )
+            )
