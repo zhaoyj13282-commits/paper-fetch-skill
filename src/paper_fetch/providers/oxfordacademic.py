@@ -44,6 +44,7 @@ from ..models import (
     article_from_markdown,
     metadata_only_article,
 )
+from ..models.render import rewrite_markdown_asset_links
 from ..provider_catalog import BodyTextThresholds, ProviderRouteSpec, ProviderSpec
 from ..pdf_limits import pdf_max_bytes
 from ..publisher_identity import normalize_doi
@@ -602,6 +603,8 @@ class OxfordAcademicClient(ProviderClient):
             list(content.extracted_assets if content is not None else []),
             list(downloaded_assets or []),
         )
+        if source == "oxfordacademic_html":
+            markdown_text = rewrite_markdown_asset_links(markdown_text, assets)
         article = article_from_markdown(
             source=source,
             metadata=merged_metadata,

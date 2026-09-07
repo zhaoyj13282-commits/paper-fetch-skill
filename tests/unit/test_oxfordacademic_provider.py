@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from tests.golden_criteria import golden_criteria_asset
 
 from paper_fetch.http import HttpTransport
@@ -165,6 +167,132 @@ def test_html_asset_download_supports_none_body_and_all_profiles(
         max_tokens="full_text",
     )
     assert str(body_result["assets"][0]["path"]) in rendered
+
+
+@pytest.mark.parametrize("downloaded_count", [2, 1, 0], ids=["all", "partial", "none"])
+def test_html_preview_images_stay_inline_after_model_rendering(
+    tmp_path: Path,
+    downloaded_count: int,
+) -> None:
+    source_url = "https://academic.oup.com/example"
+    assets = [
+        {
+            "kind": "figure",
+            "heading": f"Figure {number}",
+            "url": f"https://oup.silverchair-cdn.com/article/f{number}.jpeg",
+            "original_url": f"https://oup.silverchair-cdn.com/article/f{number}.jpeg",
+            "preview_url": f"https://oup.silverchair-cdn.com/article/m_f{number}.jpeg",
+            "section": "body",
+        }
+        for number in (1, 2)
+    ]
+    markdown = "## Results\n\n" + "\n\n".join(
+        f"Before figure {number}.\n\n![Figure {number}]({asset['preview_url']})"
+        f"\n\nAfter figure {number}."
+        for number, asset in enumerate(assets, 1)
+    )
+    raw_payload = RawFulltextPayload(
+        provider="oxfordacademic",
+        source_url=source_url,
+        content_type="text/html",
+        body=b"<article>body</article>",
+        content=ProviderContent(
+            route_kind="html",
+            source_url=source_url,
+            content_type="text/html",
+            body=b"<article>body</article>",
+            markdown_text=markdown,
+            extracted_assets=assets,
+        ),
+    )
+    downloaded_assets = []
+    for number, asset in enumerate(assets[:downloaded_count], 1):
+        path = tmp_path / f"figure-{number}.png"
+        path.write_bytes(png_header(16, 12) + b"oxford-figure")
+        downloaded_assets.append({**asset, "path": str(path)})
+    failures = (
+        [{"kind": "figure", "url": assets[1]["url"], "reason": "download_failed"}]
+        if downloaded_count == 1
+        else []
+    )
+
+    article = OxfordAcademicClient(HttpTransport(), {}).to_article_model(
+        {"doi": HTML_DOI, "title": "Example"},
+        raw_payload,
+        downloaded_assets=downloaded_assets or None,
+        asset_failures=failures,
+    )
+    rendered = article.to_ai_markdown(
+        include_refs="all", asset_profile="body", max_tokens="full_text"
+    )
+
+    assert article.quality.asset_failures == failures
+    assert sum(bool(asset.path) for asset in article.assets) == downloaded_count
+    for number, asset in enumerate(assets, 1):
+        if number <= downloaded_count:
+            target = downloaded_assets[number - 1]["path"]
+            assert asset["preview_url"] not in rendered
+            assert rendered.count(f"]({target})") == 1
+        else:
+            target = asset["preview_url"]
+            assert str(tmp_path / f"figure-{number}.png") not in rendered
+        assert (
+            f"Before figure {number}.\n\n![Figure {number}]({target})"
+            f"\n\nAfter figure {number}."
+        ) in rendered
+
+
+def test_html_fixture_localizes_all_preview_images_without_duplicates(
+    tmp_path: Path,
+) -> None:
+    source_url = "https://academic.oup.com/bioinformatics/article/37/4/497/5909988"
+    html_text = golden_criteria_asset(FIGURE_DOI, "original.html").read_text(
+        encoding="utf-8", errors="ignore"
+    )
+    extraction = _oxfordacademic_html.extract_markdown(
+        html_text, source_url, metadata={"doi": FIGURE_DOI}, asset_profile="body"
+    )
+    figures = [
+        asset for asset in extraction.extracted_assets if asset["kind"] == "figure"
+    ]
+    assert len(figures) == 9
+    downloaded_assets = []
+    for number, asset in enumerate(figures, 1):
+        assert "/m_" in asset["preview_url"]
+        assert asset["preview_url"] in extraction.markdown_text
+        path = tmp_path / f"figure-{number}.png"
+        path.write_bytes(png_header(16, 12) + b"oxford-figure")
+        downloaded_assets.append(
+            {**asset, "original_url": asset["url"], "path": str(path)}
+        )
+    raw_payload = RawFulltextPayload(
+        provider="oxfordacademic",
+        source_url=source_url,
+        content_type="text/html",
+        body=html_text.encode("utf-8"),
+        content=ProviderContent(
+            route_kind="html",
+            source_url=source_url,
+            content_type="text/html",
+            body=html_text.encode("utf-8"),
+            markdown_text=extraction.markdown_text,
+            merged_metadata=extraction.metadata,
+            extracted_assets=extraction.extracted_assets,
+        ),
+    )
+
+    article = OxfordAcademicClient(HttpTransport(), {}).to_article_model(
+        extraction.metadata, raw_payload, downloaded_assets=downloaded_assets
+    )
+    rendered = article.to_ai_markdown(
+        include_refs="all", asset_profile="body", max_tokens="full_text"
+    )
+
+    body = rendered.split("## References", 1)[0]
+    for number, asset in enumerate(downloaded_assets, 1):
+        assert asset["preview_url"] not in rendered
+        assert f"![Figure {number}]({asset['path']})" in body
+        assert rendered.count(f"]({asset['path']})") == 1
 
 
 def test_markdown_contract_structure_fixture() -> None:
