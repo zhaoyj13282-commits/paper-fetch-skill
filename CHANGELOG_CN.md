@@ -6,6 +6,14 @@
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.1.6 - 2026-09-07
+
+### 修复——Nature 扩展资产与 Wiley 图片获取
+
+- Nature Extended Data 表格和图片现在归入 supplementary scope：`body` 排除它们，`all` 通过现有图片下载路径获取。表格匹配不再假定展示编号等于页面 URL 序号；老版表图须匹配页面标题、论文回链、图片 DOI 和表格内容容器。表图保留 Markdown 引用，未取得的扩展资产保留来源和结构化失败证据，进入统一验收。
+- Wiley 公式位图现在接受大于零的自然宽高，并要求精确匹配目标图片 URL，避免替用页面中的其它图片。公式和正文 figure 图片导航改为等待导航 commit 与图片就绪，不再等待图片文档的 `DOMContentLoaded`。
+- Wiley 正文 figure 现在优先获取出版社高清候选，页面导出与图片导航均要求实际加载的图片 URL 匹配当前目标。预览回退保留来源、尺寸和高清失败证据，并标记 `download_tier=preview`、`preview_accepted=false`，由统一 acceptance 报告质量降级。
+
 ## 6.1.5 - 2026-09-05
 
 ### 不兼容变更——统一 MCP 探测入口

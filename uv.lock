@@ -1810,7 +1810,7 @@ wheels = [
 
 [[package]]
 name = "paper-fetch-skill"
-version = "6.1.5"
+version = "6.1.6"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },

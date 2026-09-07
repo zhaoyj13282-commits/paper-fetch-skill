@@ -6,6 +6,14 @@ All notable public changes to `paper-fetch-skill` are documented in this file.
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.1.6 - 2026-09-07
+
+### Fixed — Nature extended assets and Wiley image retrieval
+
+- Nature Extended Data tables and figures now belong to supplementary scope: `body` excludes them, while `all` retrieves them through the existing image download path. Table matching no longer assumes that the displayed table number equals the page URL number; legacy table images require matching page labels, article backlinks, image DOI, and table content context. Image tables retain their Markdown references, and missing extended assets retain provenance and structured failure evidence for acceptance.
+- Wiley formula bitmaps now accept positive natural dimensions and require an exact match to the requested image URL, avoiding substitution with unrelated page images. Formula and figure image navigation waits for navigation commit and image readiness instead of image-document `DOMContentLoaded`.
+- Wiley figures now prefer the publisher's full-size candidates and require the loaded image URL to match the current target during page export and image navigation. Preview fallback retains its source, dimensions, and full-size failure evidence, with `download_tier=preview` and `preview_accepted=false` so unified acceptance reports the quality downgrade.
+
 ## 6.1.5 - 2026-09-05
 
 ### Breaking — unified MCP probe entry point
