@@ -831,7 +831,7 @@ def elsevier_supplement_entries(
                 "heading": label or Path(matched_asset["path"]).name,
                 "caption": caption,
                 "link": path_relative_to(markdown_path.parent, matched_asset["path"]),
-                "path": str(asset["path"]),
+                "path": str(matched_asset["path"]),
                 "section": "supplementary",
             }
         )

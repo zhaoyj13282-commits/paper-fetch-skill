@@ -245,14 +245,35 @@ class ElsevierMarkdownTests(unittest.TestCase):
             )
         )
 
-    def test_elsevier_asset_group_requires_numbered_author_manuscript_key(self) -> None:
-        self.assertEqual(
-            elsevier_rules.infer_elsevier_asset_group_key("am1.docx"), "am1"
-        )
-        self.assertEqual(
-            elsevier_rules.infer_elsevier_asset_group_key("frame123.pdf"),
-            "frame123.pdf",
-        )
+    def test_elsevier_asset_group_recognizes_author_manuscript_aliases(self) -> None:
+        for value in (
+            "am",
+            "am.pdf",
+            "1-s2.0-S1470160X24005971-am",
+            "1-s2.0-S1470160X24005971-am.pdf",
+            " AM.PDF ",
+            "https://api.elsevier.com/content/object/eid/1-s2.0-S1470160X24005971-AM.PDF?httpAccept=%2A%2F%2A#download",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    elsevier_rules.infer_elsevier_asset_group_key(value), "am"
+                )
+        for value, expected in (
+            ("am1.docx", "am1"),
+            ("1-s2.0-S1470160X24005971-am1.docx", "am1"),
+            ("frame123.pdf", "frame123.pdf"),
+            ("am.docx", "am.docx"),
+            ("exam.pdf", "exam.pdf"),
+            ("paper-am.pdf", "paper-am.pdf"),
+            (
+                "1-s2.0-S1470160X24005971-am.pdf.bak",
+                "1-s2.0-s1470160x24005971-am.pdf.bak",
+            ),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    elsevier_rules.infer_elsevier_asset_group_key(value), expected
+                )
         self.assertTrue(
             elsevier_rules.should_ignore_elsevier_section_title("Graphical Abstract")
         )
@@ -1137,6 +1158,63 @@ class ElsevierMarkdownTests(unittest.TestCase):
         self.assertIn("## Supplementary Materials", markdown)
         self.assertIn("[Supplementary Data 1](mmc1.docx)", markdown)
 
+    def test_real_author_manuscript_alias_is_registered_and_rendered_once(self) -> None:
+        doi = "10.1016/j.ecolind.2024.112140"
+        xml_body = _load_elsevier_golden_xml(doi)
+        assets = [
+            asset
+            for asset in elsevier_provider.extract_elsevier_asset_references(xml_body)
+            if asset["asset_type"] == "supplementary"
+        ]
+        self.assertEqual([asset["source_ref"] for asset in assets], ["mmc1", "am"])
+        self.assertEqual(
+            [asset["source_kind"] for asset in assets], ["object", "object"]
+        )
+        self.assertEqual(
+            [asset["filename_hint"] for asset in assets],
+            ["1-s2.0-S1470160X24005971-mmc1.docx", "1-s2.0-S1470160X24005971-am.pdf"],
+        )
+        for asset in assets:
+            asset["path"] = asset["filename_hint"]
+        structure = elsevier_document.build_article_structure(
+            provider="elsevier",
+            metadata={"doi": doi, "title": "Elsevier Golden Fixture"},
+            xml_body=xml_body,
+            xml_path=Path("article.xml"),
+            assets=assets,
+        )
+        assert structure is not None
+        self.assertEqual(len(structure.supplement_entries), 2)
+        self.assertEqual(
+            structure.supplement_entries[0]["heading"], "Supplementary Data 1"
+        )
+        self.assertEqual(
+            [entry["path"] for entry in structure.supplement_entries],
+            [asset["path"] for asset in assets],
+        )
+        article = article_from_structure(
+            source="elsevier_xml",
+            metadata={"doi": doi, "title": structure.title},
+            doi=doi,
+            abstract_lines=structure.abstract_lines,
+            body_lines=structure.body_lines,
+            figure_entries=structure.figure_entries,
+            table_entries=structure.table_entries,
+            supplement_entries=structure.supplement_entries,
+            conversion_notes=structure.conversion_notes,
+        )
+        supplements = [
+            asset for asset in article.assets if asset.kind == "supplementary"
+        ]
+        self.assertEqual(
+            [asset.path for asset in supplements], [asset["path"] for asset in assets]
+        )
+        markdown = article.to_ai_markdown(max_tokens="full_text", asset_profile="all")
+        self.assertEqual(markdown.count(f"]({assets[1]['path']})"), 1)
+        self.assertEqual(
+            markdown.count(f"[Supplementary Data 1]({assets[0]['path']})"), 1
+        )
+
     def test_split_inline_variable_subscripts_are_rejoined_in_paragraphs(self) -> None:
         xml_body = b"""<?xml version="1.0"?>
 <full-text-retrieval-response xmlns="http://www.elsevier.com/xml/svapi/article/dtd" xmlns:ce="http://www.elsevier.com/xml/common/dtd">
@@ -1542,3 +1620,67 @@ refers to the tie.</ce:para>
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_elsevier_mathml_altimg_does_not_create_supplements_from_either_representation() -> (
+    None
+):
+    xml = b"""<article xmlns:m="http://www.w3.org/1998/Math/MathML">
+    <object ref="si1" type="ALTIMG" category="thumbnail">https://example.test/si1.svg</object>
+    <attachment><attachment-type>ALTIMG</attachment-type><attachment-eid>1-s2.0-test-si1</attachment-eid><filename>si1.svg</filename></attachment>
+    <m:math altimg="si1.svg"><m:mi>x</m:mi></m:math>
+    <object ref="si2" type="SUPPLEMENTARY">https://example.test/si2.pdf</object>
+    <attachment><attachment-eid>1-s2.0-test-si2</attachment-eid><filename>si2.pdf</filename></attachment>
+    </article>"""
+    refs = elsevier_provider.extract_elsevier_asset_references(xml)
+    assert len(refs) == 1
+    assert refs[0]["source_ref"] == "si2"
+    assert refs[0]["asset_type"] == "supplementary"
+
+
+def test_elsevier_original_mathml_sample_has_no_independent_formula_supplements() -> (
+    None
+):
+    xml = golden_criteria_asset(
+        "10.1016/j.rse.2025.114648", "original.xml"
+    ).read_bytes()
+    refs = elsevier_provider.extract_elsevier_asset_references(xml)
+    assert refs
+    assert not [a for a in refs if a["asset_type"] == "supplementary"]
+    assert not [a for a in refs if a.get("object_type") == "ALTIMG"]
+
+
+def test_supplement_identity_survives_asset_order_and_article_rendering(tmp_path):
+    from paper_fetch.providers._article_markdown_elsevier import (
+        elsevier_supplement_entries,
+    )
+
+    root = ET.fromstring("""<article>
+      <e-component><label>Supporting DOCX</label><caption>Methods</caption><link locator="mmc1"/></e-component>
+      <e-component><label>Supporting PDF</label><caption>Data</caption><link locator="mmc2"/></e-component>
+    </article>""")
+    assets = [
+        {"asset_type": "supplementary", "source_ref": ref, "path": str(tmp_path / name)}
+        for ref, name in [("mmc1", "methods.docx"), ("mmc2", "data.pdf")]
+    ]
+    for ordered in (assets, assets[::-1]):
+        entries = elsevier_supplement_entries(root, ordered, tmp_path / "article.md")
+        assert [(e["heading"], e["link"], e["path"]) for e in entries] == [
+            ("Supporting DOCX", "methods.docx", str(tmp_path / "methods.docx")),
+            ("Supporting PDF", "data.pdf", str(tmp_path / "data.pdf")),
+        ]
+        article = article_from_structure(
+            source="elsevier_xml",
+            metadata={"doi": "10.1016/test", "title": "Test"},
+            doi="10.1016/test",
+            abstract_lines=[],
+            body_lines=["Body text."],
+            figure_entries=[],
+            table_entries=[],
+            supplement_entries=entries,
+            conversion_notes=[],
+        )
+        assert [a.path for a in article.assets] == [a["path"] for a in assets]
+        markdown = article.to_ai_markdown(max_tokens="full_text", asset_profile="all")
+        assert f"[Supporting DOCX]({tmp_path / 'methods.docx'})" in markdown
+        assert f"[Supporting PDF]({tmp_path / 'data.pdf'})" in markdown

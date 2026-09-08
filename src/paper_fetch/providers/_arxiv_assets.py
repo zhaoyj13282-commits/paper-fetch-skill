@@ -14,6 +14,7 @@ import urllib.parse
 import uuid
 
 from ..common_patterns import EXTENDED_DATA_FIGURE_LABEL
+from ..arxiv_id import arxiv_id_from_query, canonical_arxiv_abs_url
 from ..asset_budget import AssetBudget, AssetBudgetExceeded, AssetReservation
 from ..artifacts import ArtifactStore
 from ..config import resolve_asset_download_concurrency
@@ -25,6 +26,7 @@ from ..extraction.image_payloads import (
 )
 from ..extraction.html import assets as html_assets
 from ..http import (
+    DEFAULT_FULLTEXT_TIMEOUT_SECONDS,
     HttpRequestPolicy,
     HttpStreamOptions,
     HttpTransport,
@@ -61,6 +63,161 @@ ARXIV_IMAGE_ACCEPT = "image/avif,image/webp,image/*,*/*;q=0.8"
 ARXIV_SOURCE_ACCEPT = (
     "application/gzip,application/x-gzip,application/x-tar,application/zip,*/*;q=0.8"
 )
+
+
+def _official_arxiv_ancillary_url(url: str) -> str:
+    """Normalize untrusted listing links before testing paper/version ownership."""
+    parsed = urllib.parse.urlsplit(url)
+    path = urllib.parse.unquote(parsed.path)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc.lower() != "arxiv.org"
+        or any(part in {".", "..", ""} for part in path.split("/")[1:])
+        or any(ord(char) < 32 or ord(char) == 127 for char in path)
+        or "\\" in path
+        or "%" in path
+    ):
+        return ""
+    return "https://arxiv.org" + urllib.parse.quote(path, safe="/-._~")
+
+
+def discover_arxiv_ancillary_assets(
+    transport: HttpTransport,
+    arxiv_id: str,
+    *,
+    user_agent: str,
+    context: RuntimeContext,
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+    """Pin the abstract-page version and read its complete official file list."""
+    result = empty_asset_results()
+    page_url = canonical_arxiv_abs_url(arxiv_id)
+
+    def read_page(url: str) -> BeautifulSoup:
+        context.raise_if_cancelled()
+        response = transport.request(
+            "GET",
+            url,
+            headers={"Accept": "text/html", "User-Agent": user_agent},
+            timeout=DEFAULT_FULLTEXT_TIMEOUT_SECONDS,
+            request_policy=provider_request_policy("arxiv", "source_assets"),
+        )
+        final_url = urllib.parse.urljoin(url, str(response.get("url") or url))
+        if _official_arxiv_ancillary_url(final_url) != url:
+            raise ValueError(
+                "arXiv ancillary page redirected to a different identity or route."
+            )
+        if int(response.get("status") or 200) != 200:
+            raise ValueError("arXiv ancillary page did not return HTTP 200.")
+        return BeautifulSoup(bytes(response.get("body") or b""), ARXIV_HTML_PARSER)
+
+    try:
+        abstract = read_page(page_url)
+        identity = abstract.select_one('meta[name="citation_arxiv_id"]')
+        version_link = abstract.select_one(".arxividv a[href]")
+        observed = (
+            arxiv_id_from_query(str(identity.get("content") or "")) if identity else ""
+        )
+        version_url = (
+            _official_arxiv_ancillary_url(
+                urllib.parse.urljoin(page_url, str(version_link.get("href") or ""))
+            )
+            if version_link
+            else ""
+        )
+        version = arxiv_id_from_query(version_url)
+        if (
+            not abstract.select_one("#abs h1.title")
+            or not observed
+            or re.sub(r"v\d+$", "", observed) != re.sub(r"v\d+$", "", arxiv_id)
+            or not re.search(r"v\d+$", version)
+            or re.sub(r"v\d+$", "", version) != re.sub(r"v\d+$", "", arxiv_id)
+            or (re.search(r"v\d+$", arxiv_id) and version != arxiv_id)
+        ):
+            raise ValueError(
+                "arXiv abstract page identity/version could not be verified."
+            )
+        arxiv_id = version
+        ancillary = abstract.select_one(".ancillary")
+        if ancillary is None:
+            return arxiv_id, result
+        details_url = f"https://arxiv.org/src/{arxiv_id}/anc"
+        if not any(
+            _official_arxiv_ancillary_url(
+                urllib.parse.urljoin(page_url, str(link.get("href") or ""))
+            )
+            == details_url
+            for link in ancillary.select("a[href]")
+        ):
+            raise ValueError(
+                "arXiv Ancillary files section has no matching details link."
+            )
+        page_url = details_url
+        details = read_page(page_url)
+        heading = details.select_one("#content h2")
+        heading_link = heading.select_one("a[href]") if heading else None
+        if (
+            heading is None
+            or not heading.get_text(" ", strip=True).startswith("Ancillary files for ")
+            or heading_link is None
+            or _official_arxiv_ancillary_url(
+                urllib.parse.urljoin(page_url, str(heading_link.get("href") or ""))
+            )
+            != canonical_arxiv_abs_url(arxiv_id)
+        ):
+            raise ValueError(
+                "arXiv ancillary details identity/version could not be verified."
+            )
+        count = re.search(
+            r"There are (\d+) ancillary files", details.get_text(" ", strip=True)
+        )
+        prefix = details_url + "/"
+        seen: set[str] = set()
+        for link in details.select("#content a.anc-file-name[href]"):
+            href = str(link.get("href") or "")
+            # Reject traversal before urljoin can erase dot segments.
+            if any(
+                part in {".", ".."}
+                for part in urllib.parse.unquote(
+                    urllib.parse.urlsplit(href).path
+                ).split("/")
+            ):
+                continue
+            url = _official_arxiv_ancillary_url(urllib.parse.urljoin(page_url, href))
+            if not url.startswith(prefix) or url in seen:
+                continue
+            seen.add(url)
+            source_path = urllib.parse.unquote(url[len(prefix) :])
+            result["assets"].append(
+                {
+                    "kind": "supplementary",
+                    "section": "supplementary",
+                    "heading": normalize_text(link.get_text(" ", strip=True))
+                    or source_path,
+                    "url": url,
+                    "source_ref": url,
+                    "source_path": source_path,
+                    "filename_hint": source_path.rsplit("/", 1)[-1],
+                }
+            )
+        if count is None or int(count.group(1)) != len(seen) or not seen:
+            raise ValueError("arXiv ancillary details list is missing or incomplete.")
+    except (RequestFailure, ValueError) as exc:
+        result = {
+            "assets": [],
+            "asset_failures": [
+                {
+                    "kind": "supplementary",
+                    "section": "supplementary",
+                    "heading": "Ancillary files",
+                    "source_url": page_url,
+                    "reason": "arxiv_ancillary_discovery_failed",
+                    "message": str(exc),
+                }
+            ],
+        }
+    return arxiv_id, result
+
+
 _ARXIV_FIGURE_CAPTION_LABEL_PATTERN = re.compile(
     rf"^(?P<label>(?:Figure|Fig\.?|{re.escape(EXTENDED_DATA_FIGURE_LABEL)}\.?)\s+\d+[A-Za-z]?)[.:]?\s*(?P<caption>.*)$",
     flags=re.IGNORECASE,

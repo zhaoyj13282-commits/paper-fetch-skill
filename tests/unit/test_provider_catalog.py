@@ -378,6 +378,12 @@ class ProviderCatalogTests(unittest.TestCase):
             PROVIDER_CATALOG["arxiv"] = PROVIDER_CATALOG["arxiv"]  # type: ignore[index]
 
     def test_arxiv_metadata_probe_short_circuit_is_catalog_derived(self) -> None:
+        spec = PROVIDER_CATALOG["arxiv"]
+        self.assertEqual(spec.asset_default, "body")
+        assets = next(route for route in spec.routes if route.kind == "assets")
+        self.assertEqual(assets.asset_scope, "all")
+        self.assertEqual(assets.qps, 1 / 3)
+        self.assertEqual(assets.hosts, ("arxiv.org",))
         callback = provider_metadata_probe_short_circuit("arxiv")
 
         self.assertIsNotNone(callback)

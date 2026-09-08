@@ -1046,3 +1046,290 @@ def test_wiley_picture_uses_loaded_target_at_both_viewports(monkeypatch):
                     )
                     assert not ready["ready"], (mode, ready)
             context.close()
+
+
+@pytest.mark.parametrize(
+    "collapsed, outcome",
+    [
+        (True, "download"),
+        (False, "download"),
+        (True, "transfer_timeout"),
+        (False, "challenge"),
+        (True, "first_click_ignored"),
+        (True, "delayed_links"),
+        (True, "never_expands"),
+    ],
+)
+def test_wiley_file_fetcher_clicks_supporting_panel_and_preserves_response(
+    tmp_path, collapsed, outcome
+):
+    from types import SimpleNamespace
+
+    url = "https://onlinelibrary.wiley.com/action/downloadSupplement?doi=10.1111/test&file=si.docx"
+    article_url = "https://onlinelibrary.wiley.com/doi/full/10.1111/test"
+    file_path = tmp_path / "browser-download"
+    file_path.write_bytes(b"PK\x03\x04supplement")
+    response = _BrowserResponse(url, file_path.read_bytes(), "application/octet-stream")
+    if outcome == "challenge":
+        response = _BrowserResponse(
+            url, b"<title>Just a moment...</title>", "text/html", status=403
+        )
+    response.request = SimpleNamespace(url=url, redirected_from=None)
+    page = mock.Mock(url=article_url)
+    link = page.locator.return_value.locator.return_value.first
+    link.is_visible.return_value = not collapsed
+    control = link.locator.return_value.locator.return_value.first
+    control.get_attribute.return_value = "false"
+    visible_waits = 0
+
+    def wait_for_link(*, state, timeout):
+        nonlocal visible_waits
+        if state != "visible":
+            return
+        visible_waits += 1
+        if outcome == "never_expands" or (
+            outcome in {"first_click_ignored", "delayed_links"} and visible_waits == 1
+        ):
+            assert 0 < timeout <= 5000
+            if outcome == "delayed_links":
+                control.get_attribute.return_value = "true"
+            raise TimeoutError("panel not ready")
+        link.is_visible.return_value = True
+
+    link.wait_for.side_effect = wait_for_link
+    download = mock.Mock(url=url)
+    download.path.return_value = str(file_path)
+    page.expect_event.return_value.__enter__ = mock.Mock()
+    page.expect_event.return_value.__exit__ = mock.Mock(return_value=False)
+    page.expect_download.return_value.__enter__ = mock.Mock(
+        return_value=SimpleNamespace(value=download)
+    )
+    page.expect_download.return_value.__exit__ = mock.Mock(return_value=False)
+    if outcome == "transfer_timeout":
+        page.expect_event.return_value.__exit__.side_effect = TimeoutError(
+            "transfer stalled"
+        )
+    elif outcome == "challenge":
+        page.expect_download.return_value.__exit__.side_effect = TimeoutError(
+            "no download"
+        )
+    callbacks = {}
+    page.on.side_effect = lambda event, callback: callbacks.update({event: callback})
+
+    def click(**kwargs):
+        if not kwargs.get("trial"):
+            callbacks["response"](response)
+
+    link.click.side_effect = click
+    fetcher = file_fetchers._SharedBrowserFileDocumentFetcher(
+        browser_context_seed_getter=lambda: {"browser_final_url": article_url},
+        seed_urls_getter=lambda: [article_url],
+        browser_options=fetcher_context.BrowserDocumentFetcherOptions(
+            runtime_config=SimpleNamespace(provider="wiley")
+        ),
+    )
+    fetcher._page = page
+    fetcher._context = mock.Mock()
+    with mock.patch.object(
+        file_fetchers,
+        "wait_for_atypon_body_dom_ready",
+        return_value=SimpleNamespace(ready=True),
+    ):
+        result = fetcher(url, {"kind": "supplementary"})
+    if outcome in {"download", "first_click_ignored", "delayed_links"}:
+        assert result == {
+            "status_code": 200,
+            "headers": response.headers,
+            "body": file_path.read_bytes(),
+            "url": url,
+        }
+    elif outcome == "never_expands":
+        assert result is None
+        assert fetcher.failure_for(url)["reason"] == "wiley_supplement_panel_not_ready"
+        assert control.click.call_count == 3
+        link.click.assert_not_called()
+        page.expect_download.assert_not_called()
+        return
+    else:
+        assert result is None
+        assert fetcher.failure_for(url)["reason"] == (
+            "cloudflare_challenge"
+            if outcome == "challenge"
+            else "wiley_supplement_download_timeout"
+        )
+        assert fetcher.failure_for(url)["status"] == response.status
+        download.path.assert_not_called()
+    assert control.click.call_count == (
+        2 if outcome == "first_click_ignored" else int(collapsed)
+    )
+    assert link.click.call_count == 2
+    assert link.click.call_args_list[0].kwargs["trial"] is True
+    assert "trial" not in link.click.call_args_list[1].kwargs
+    fetcher._context.request.get.assert_not_called()
+    page.goto.assert_not_called()
+    if outcome != "challenge":
+        download.cancel.assert_called_once()
+        download.delete.assert_called_once()
+    page.remove_listener.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "ready, challenge, expected",
+    [
+        (False, True, "cloudflare_challenge"),
+        (False, False, "wiley_supplement_article_not_ready"),
+        (True, False, "wiley_supplement_download_timeout"),
+    ],
+)
+def test_wiley_file_click_reports_challenge_readiness_and_timeout(
+    ready, challenge, expected
+):
+    from types import SimpleNamespace
+
+    page = mock.Mock(url="https://onlinelibrary.wiley.com/doi/full/10.1111/test")
+    page.content.return_value = (
+        "<title>Just a moment...</title>"
+        if challenge
+        else "<article>Not ready</article>"
+    )
+    page.locator.return_value.locator.return_value.first.is_visible.return_value = True
+    page.expect_event.side_effect = TimeoutError("download timed out")
+    fetcher = file_fetchers._SharedBrowserFileDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+    )
+    fetcher._page = page
+    with mock.patch.object(
+        file_fetchers,
+        "wait_for_atypon_body_dom_ready",
+        return_value=SimpleNamespace(ready=ready),
+    ):
+        assert (
+            fetcher._fetch_wiley_with_page_click(
+                "https://onlinelibrary.wiley.com/si.docx", {}
+            )
+            is None
+        )
+    assert (
+        fetcher.failure_for("https://onlinelibrary.wiley.com/si.docx")["reason"]
+        == expected
+    )
+
+
+def test_wiley_file_click_caps_operations_by_remaining_request_budget():
+    from types import SimpleNamespace
+
+    context = RuntimeContext(env={})
+    context.initialize_deadline(2)
+    page = mock.Mock(url="https://onlinelibrary.wiley.com/doi/full/10.1111/test")
+    fetcher = file_fetchers._SharedBrowserFileDocumentFetcher(
+        browser_context_seed_getter=lambda: {},
+        seed_urls_getter=lambda: [],
+        runtime_context=context,
+    )
+    fetcher._page = page
+    page.content.return_value = "<article>Not ready</article>"
+    with mock.patch.object(
+        file_fetchers,
+        "wait_for_atypon_body_dom_ready",
+        return_value=SimpleNamespace(ready=False),
+    ) as wait:
+        assert (
+            fetcher._fetch_wiley_with_page_click(
+                "https://onlinelibrary.wiley.com/si.docx", {}
+            )
+            is None
+        )
+    assert 0 < wait.call_args.kwargs["timeout_seconds"] <= 2
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("ignored_click", [False, True])
+def test_wiley_click_survives_collapsed_panel_redraw_in_browser(
+    monkeypatch, ignored_click
+):
+    import json
+    import os
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from tests._environment import PRESERVED_CAMOUFOX_EXECUTABLE_ENV_VAR
+
+    executable = os.environ.get(PRESERVED_CAMOUFOX_EXECUTABLE_ENV_VAR)
+    if not executable or not Path(executable).is_file():
+        pytest.skip("requires the existing local Camoufox executable")
+    camoufox = pytest.importorskip("camoufox.sync_api")
+    from camoufox import DefaultAddons, utils
+
+    version_file = next(
+        parent / "version.json"
+        for parent in Path(executable).parents
+        if (parent / "version.json").is_file()
+    )
+    monkeypatch.setattr(
+        utils,
+        "installed_verstr",
+        lambda: json.loads(version_file.read_text())["version"],
+    )
+    article_url = "https://example.test/article"
+    file_url = "https://example.test/supplement.docx"
+    body = b"PK\x03\x04real-browser-supplement"
+    html = (
+        """<section class="article-section__content"><h2>Results</h2><p>"""
+        + "Article body. " * 120
+        + """</p><p>Second paragraph.</p></section>
+    <section class="article-section__supporting"><div class="accordion">
+      <a class="accordion__control" aria-expanded="false" onclick="this.parentElement.innerHTML='<a href=/supplement.docx download>Supporting file</a>'">Supporting Information</a>
+      <div hidden><a href="/supplement.docx" download>Supporting file</a></div>
+    </div></section>"""
+    )
+    if ignored_click:
+        # The initial control is replaced before its delayed handler is ready.
+        html = html.replace(
+            'onclick="this.parentElement.innerHTML=',
+            "onclick=\"if (!this.dataset.ready) { const replacement = this.cloneNode(true); this.replaceWith(replacement); setTimeout(() => replacement.dataset.ready = 'true', 200); return; } this.parentElement.innerHTML=",
+        )
+    requests = []
+    finished = []
+
+    def route_asset(route):
+        requests.append(route.request.url)
+        if route.request.url == article_url:
+            route.fulfill(body=html, content_type="text/html")
+        else:
+            route.fulfill(
+                body=body,
+                content_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": 'attachment; filename="supplement.docx"'
+                },
+            )
+
+    with camoufox.Camoufox(
+        headless=True, executable_path=executable, exclude_addons=list(DefaultAddons)
+    ) as browser:
+        context = browser.new_context()
+        context.route("https://example.test/**", route_asset)
+        page = context.new_page()
+        page.on("requestfinished", lambda request: finished.append(request.url))
+        page.goto(article_url)
+        fetcher = file_fetchers._SharedBrowserFileDocumentFetcher(
+            browser_context_seed_getter=lambda: {"browser_final_url": article_url},
+            seed_urls_getter=lambda: [article_url],
+            browser_options=fetcher_context.BrowserDocumentFetcherOptions(
+                runtime_config=SimpleNamespace(provider="wiley")
+            ),
+        )
+        fetcher._page = page
+        fetcher._context = context
+        result = fetcher(file_url, {"kind": "supplementary"})
+        assert result is not None, fetcher.failure_for(file_url)
+        assert result["body"] == body
+        assert result["status_code"] == 200
+        assert (
+            result["headers"]["content-disposition"]
+            == 'attachment; filename="supplement.docx"'
+        )
+        assert requests.count(file_url) == 1
+        assert file_url in finished, "download request does not emit requestfinished"
+        context.close()

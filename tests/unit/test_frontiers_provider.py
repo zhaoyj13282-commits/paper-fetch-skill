@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import re
+import json
+
+import pytest
 
 from paper_fetch.extraction.image_payloads import image_mime_type_from_bytes
 from paper_fetch.providers.frontiers import FrontiersClient
@@ -26,6 +29,9 @@ IMAGE_URL = "https://www.frontiersin.org/files/Articles/1101972/xml-images/fmars
 SUPPLEMENT_URL = (
     "https://www.frontiersin.org/files/Articles/1101972/supplementary-material/"
     "Table_1.docx"
+)
+SUPPLEMENT_API_URL = (
+    "https://www.frontiersin.org/api/v4/articles/1101972/supplemental-data"
 )
 TARGET_DOI = "10.3389/fpls.2020.01216"
 TARGET_CANONICAL_FULL_URL = (
@@ -668,7 +674,12 @@ def test_frontiers_unresolved_supplementary_asset_maps_to_landing_anchor(
     tmp_path: Path,
 ) -> None:
     transport = FixtureHtmlTransport(
-        {XML_URL: http_response(XML_URL, _frontiers_xml(), "text/xml")}
+        {
+            XML_URL: http_response(XML_URL, _frontiers_xml(), "text/xml"),
+            SUPPLEMENT_API_URL: http_response(
+                SUPPLEMENT_API_URL, b"[]", "application/json"
+            ),
+        }
     )
     client = FrontiersClient(transport, {})
     raw_payload = client.fetch_raw_fulltext(
@@ -710,7 +721,7 @@ def test_frontiers_unresolved_supplementary_asset_maps_to_landing_anchor(
             "archive_state": "not_archived",
         }
     ]
-    assert [call["url"] for call in transport.calls] == [XML_URL]
+    assert [call["url"] for call in transport.calls] == [XML_URL, SUPPLEMENT_API_URL]
 
 
 def test_frontiers_pdf_fallback_rejects_html_xml_candidate() -> None:
@@ -753,3 +764,65 @@ def test_frontiers_catalog_routes_domain_publisher_and_doi_signals() -> None:
     )
     assert provider_for_source("frontiers_xml") == "frontiers"
     assert provider_for_source("frontiers_pdf") == "frontiers"
+
+
+@pytest.mark.parametrize(
+    "entries, expected_count",
+    [
+        ([{"name": "Table 1.DOCX", "downloadUrl": SUPPLEMENT_URL}], 1),
+        ([{"name": "Table_2.docx", "downloadUrl": SUPPLEMENT_URL}], 0),
+        (
+            [
+                {"name": "Table 1.docx", "downloadUrl": SUPPLEMENT_URL},
+                {"name": "Table_1.DOCX", "downloadUrl": SUPPLEMENT_URL + "?other=1"},
+            ],
+            0,
+        ),
+        ([{"name": "Table 1.docx", "downloadUrl": "javascript:;"}], 0),
+    ],
+)
+def test_frontiers_maps_relative_supplement_only_from_unique_api_name(
+    tmp_path: Path,
+    entries: list,
+    expected_count: int,
+) -> None:
+    transport = FixtureHtmlTransport(
+        {
+            XML_URL: http_response(XML_URL, _frontiers_xml(), "text/xml"),
+            SUPPLEMENT_API_URL: http_response(
+                SUPPLEMENT_API_URL, json.dumps(entries).encode(), "application/json"
+            ),
+            SUPPLEMENT_URL: http_response(
+                SUPPLEMENT_URL, b"PK\x03\x04supplement", "application/octet-stream"
+            ),
+        }
+    )
+    client = FrontiersClient(transport, {})
+    payload = client.fetch_raw_fulltext(
+        DOI, {"doi": DOI, "landing_page_url": CANONICAL_FULL_URL}
+    )
+    payload.content = replace(
+        payload.content,
+        extracted_assets=[
+            a
+            for a in payload.content.extracted_assets
+            if a.get("kind") == "supplementary"
+        ],
+    )
+    client.download_related_assets(
+        DOI, {"doi": DOI}, payload, tmp_path, asset_profile="body"
+    )
+    assert [call["url"] for call in transport.calls] == [XML_URL]
+    result = client.download_related_assets(
+        DOI, {"doi": DOI}, payload, tmp_path, asset_profile="all"
+    )
+    assert len(result["assets"]) == expected_count
+    assert len(result["asset_failures"]) == 1 - expected_count
+    if expected_count:
+        assert result["assets"][0]["download_url"] == SUPPLEMENT_URL
+        assert Path(result["assets"][0]["path"]).suffix == ".DOCX"
+        assert (
+            payload.content.extracted_assets[0]["source_page_url"] == SUPPLEMENT_API_URL
+        )
+    else:
+        assert SUPPLEMENT_URL not in [call["url"] for call in transport.calls]

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import re
 from typing import Any
 from collections.abc import Mapping
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from bs4 import BeautifulSoup, Comment, Tag
 
@@ -327,6 +327,51 @@ def _supplementary_lines(soup: BeautifulSoup) -> list[str]:
     return lines
 
 
+def _supplementary_assets(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
+    # Prefer the attachment widget's current signed URL over inline references.
+    panel_links = soup.select(".dataSuppLink a[href]")
+    links = [*panel_links, *soup.select("a[href]")]
+    panel_ids = {id(anchor) for anchor in panel_links}
+    assets: dict[tuple[str, str, str, str], dict[str, str]] = {}
+    for anchor in links:
+        url = urljoin(source_url, str(anchor.get("href") or ""))
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        path = parsed.path.lower()
+        if "/article-pdf/" in path or re.search(r"/doi/(?:e?pdf)/", path):
+            continue
+        cdn_attachment = (
+            parsed.hostname == "oup.silverchair-cdn.com" and "/oup/backfile/" in path
+        )
+        local_attachment = parsed.hostname == "academic.oup.com" and any(
+            token in path
+            for token in (
+                "/suppl_file/",
+                "/article-supplement/",
+                "/article/supplement/",
+            )
+        )
+        if id(anchor) not in panel_ids and not (cdn_attachment or local_attachment):
+            continue
+        candidates = html_assets.extract_supplementary_assets(str(anchor), source_url)
+        if not candidates:
+            continue
+        query = parsed.query
+        if cdn_attachment:
+            query = urlencode(
+                [
+                    (key, value)
+                    for key, value in parse_qsl(query, keep_blank_values=True)
+                    if key.lower()
+                    not in {"expires", "signature", "key-pair-id", "policy"}
+                ]
+            )
+        identity = (parsed.scheme, parsed.netloc, parsed.path, query)
+        assets.setdefault(identity, candidates[0])
+    return list(assets.values())
+
+
 def _article_body(soup: BeautifulSoup) -> Any:
     return (
         _first_with_class(soup, "article-body")
@@ -367,6 +412,9 @@ def extract_markdown(
     title = str(merged_metadata.get("title") or merged_metadata.get("doi") or "")
     soup = BeautifulSoup(html_text, choose_parser())
     supplementary_lines = _supplementary_lines(soup)
+    supplementary_assets = (
+        _supplementary_assets(soup, source_url) if asset_profile == "all" else []
+    )
     body = _article_body(soup)
     _normalize_oxford_body_for_rendering(body)
     for selector in OXFORDACADEMIC_EXTRACTION_CLEANUP_SELECTORS:
@@ -428,7 +476,9 @@ def extract_markdown(
             body_html,
             source_url,
             asset_profile=asset_profile,
-        ),
+            supplementary_html_text="",
+        )
+        + supplementary_assets,
     )
 
 

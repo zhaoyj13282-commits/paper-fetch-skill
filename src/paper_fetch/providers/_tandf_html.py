@@ -10,7 +10,7 @@ import io
 import re
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
@@ -1249,11 +1249,16 @@ def _extract_tandf_supplementary_assets(
 ) -> list[dict[str, str]]:
     from ..extraction.html import assets as html_assets
 
-    return [
+    assets = [
         asset
         for asset in html_assets.extract_supplementary_assets(html_text, source_url)
         if "/action/downloadsupplement" in normalize_text(asset.get("url")).lower()
     ]
+    for asset in assets:
+        filenames = parse_qs(urlparse(asset["url"]).query).get("file", [])
+        if len(filenames) == 1 and normalize_text(filenames[0]):
+            asset["filename_hint"] = filenames[0]
+    return assets
 
 
 def _mark_tandf_accepted_figure_previews(

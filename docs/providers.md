@@ -34,12 +34,12 @@ Browser HTML/PDF fallback、HTTP streaming 和 HTML assets 的高参数入口内
 | `ams` | 依赖 Crossref | `DOI landing -> selected-browser HTML -> browser-seeded PDF fallback` | HTML 路线支持 `none` / `body` / `all`；正文 figure 优先 AMS `Download Figure` EPS/TIFF 源图并转 PNG，失败回退网页 JPG/PNG；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 中 | AMS 默认用 Camoufox 打开 `journals.ametsoc.org/view/...xml` 并允许站点静默完成 JavaScript/WAF 验证；无保存状态也会尝试，有 provider storage-state 时自动复用；HTML 不可用时用同一 browser seed 尝试 `downloadpdf` PDF；通用 SICI DOI 提取会保留 `<...>` / `;` 后缀；显式忽略 `citation_xml_url`，不请求 `/doc/...xml`，不暴露 XML/JATS source；HTML 成功公开 `ams_html`，PDF fallback 成功公开 `ams_pdf` |
 | `mdpi` | 依赖 Crossref merge | `selected-browser HTML -> browser-seeded article PDF` | HTML 路线支持 `none` / `body` / `all`；PDF fallback 可提取 PDF 图片 | 中 | MDPI direct HTTP 常受 CDN 策略影响，主路径使用所选浏览器捕获公开 article HTML |
 | `ieee` | 依赖 Crossref merge + landing metadata | `direct landing -> selected-browser landing -> direct REST HTML -> selected-browser HTML -> direct PDF -> selected-browser PDF` | HTML 路线支持 `none` / `body` / `all`，figure/table/formula 和补充文件 direct-first browser recovery；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片 | 中 | direct 成功不启动浏览器；eligible asset failure 在同一论文页 context/page 中串行恢复并复用最新 cookie/Referer；不对 `404/410/429` 做 browser recovery，不处理 CAPTCHA、登录自动化或权限绕过 |
-| `arxiv` | arXiv ID + 默认 Atom API enrichment | `ID 解析 -> arXiv official HTML -> direct HTTP PDF -> metadata fallback` | HTML 路线对每个正文 figure 优先尝试 arXiv e-print source 包中的官方源图，无法匹配或访问时才回退 official HTML rendition；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 中 | HTML front matter 在主路径内合并；默认使用内部 arXiv Atom API client 在 HTML/PDF 主链结束后补齐 metadata，失败只追加 warning、不影响已得到的 fulltext payload；HTML 成功公开为 `arxiv_html`，PDF fallback 公开为 `arxiv_pdf`；可识别的 ID 形态（含 `vN` 版本、`10.48550/arXiv.*` 等）见后文 arXiv 小节 |
+| `arxiv` | arXiv ID + 默认 Atom API enrichment | `ID 解析 -> arXiv official HTML -> direct HTTP PDF -> metadata fallback` | HTML 路线对每个正文 figure 优先尝试 arXiv e-print source 包中的官方源图，无法匹配或访问时才回退 official HTML rendition；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/`；`all` 另下载同版本官方 Ancillary files | 中 | HTML front matter 在主路径内合并；默认使用内部 arXiv Atom API client 在 HTML/PDF 主链结束后补齐 metadata，失败只追加 warning、不影响已得到的 fulltext payload；HTML 成功公开为 `arxiv_html`，PDF fallback 公开为 `arxiv_pdf`；可识别的 ID 形态（含 `vN` 版本、`10.48550/arXiv.*` 等）见后文 arXiv 小节 |
 | `copernicus` | 依赖 Crossref merge + landing metadata | `landing HTML / DOI-derived URL -> NLM/JATS XML -> direct HTTP PDF -> metadata fallback` | XML 路线支持 `none` / `body` / `all`，figure 从官方 JATS `graphic`/rendition 中选择最高质量候选；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 强 | 开放获取 direct HTTP 路线，不需要登录态或本地浏览器运行时；XML 成功公开为 `copernicus_xml`，PDF fallback 公开为 `copernicus_pdf` |
 | `royalsocietypublishing` | Crossref/DOI browser HTML metadata merge | `selected-browser DOI HTML -> browser-seeded PDF -> metadata fallback` | HTML 路线支持 `none` / `body` / `all`；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 强 | Royal Society Publishing 通过 `10.1098/` DOI 和 `royalsocietypublishing.org` 路由；HTML 成功公开为 `royalsocietypublishing_html`，PDF fallback 公开为 `royalsocietypublishing_pdf`；需要 Playwright/browser runtime；显式不把 `citation_xml_url` 当作 XML/JATS 路线 |
 | `annualreviews` | 依赖 Crossref routing | `selected-browser landing/full-text HTML -> browser-seeded PDF -> provider-managed abstract_only -> metadata fallback` | HTML 路线支持 `none` / `body` / `all`；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 中 | Annual Reviews 通过 `10.1146/` DOI 和 `annualreviews.org` 域名路由，排除 Knowable Magazine / 非 article 样本；HTML 成功公开为 `annualreviews_html`，PDF fallback 公开为 `annualreviews_pdf`；需要 Playwright/browser runtime |
 | `plos` | 依赖 Crossref routing | `public JATS XML -> direct HTTP PDF -> metadata fallback` | XML 路线支持 `none` / `body` / `all`；PDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 强 | PLOS 通过 `10.1371/` DOI prefix 和 `journals.plos.org` 路由；XML 成功公开为 `plos_xml`，PDF fallback 公开为 `plos_pdf`；按 access review 不把 HTML 作为全文路线 |
-| `frontiers` | Frontiers domain / DOI routing | `canonical JATS XML -> canonical PDF -> landing discovery -> JATS XML/PDF -> metadata fallback` | XML 路线支持 `none` / `body` / `all`：正文图 direct-first；绝对 supplementary URL 仅在 `all` 归档，未发布直链的相对附件明确标为 `not_archived`；PDF fallback 可导出 PDF 图片 | 强 | Frontiers 通过 `10.3389/` DOI prefix 和 `www.frontiersin.org` 路由；XML 成功公开为 `frontiers_xml`，PDF fallback 公开为 `frontiers_pdf` |
+| `frontiers` | Frontiers domain / DOI routing | `canonical JATS XML -> canonical PDF -> landing discovery -> JATS XML/PDF -> metadata fallback` | XML 路线支持 `none` / `body` / `all`：正文图 direct-first；supplementary 仅在 `all` 归档，相对附件名通过同篇 supplemental-data 接口唯一匹配，无匹配时标为 `not_archived`；PDF fallback 可导出 PDF 图片 | 强 | Frontiers 通过 `10.3389/` DOI prefix 和 `www.frontiersin.org` 路由；XML 成功公开为 `frontiers_xml`，PDF fallback 公开为 `frontiers_pdf` |
 | `oxfordacademic` | DOI prefix/domain routing for Oxford Academic public articles | `direct HTTP article HTML -> direct HTTP PDF fallback -> metadata fallback` | HTML 路线支持 `none` / `body` / `all`，正文 figure/formula 和 supplementary 使用 Silverchair 共享资产下载器并 direct-first；下载后改写本地链接。PDF fallback 使用稳定 article-pdf URL，只接受已验证 PDF，并可导出 PDF 图片 | 中 | `oxfordacademic_html` / `oxfordacademic_pdf` |
 | `acs` | 依赖 Crossref routing | `selected-browser Silverchair HTML -> browser-seeded publisher PDF/ePDF with browser-navigation direct PDF preflight -> provider-managed abstract_only` | HTML 路线支持 `none` / `body` / `all`，识别当前 `.article-body` / `.widget-ArticleFulltext`、`.fig.fig-section`、`.ref-list` 和 `.widget-ArticleDataSupplements`；PDF/ePDF fallback 在 `body/all` 且允许落盘时提取 PDF 图片到 `<doi>_assets/` | 中 | ACS 通过 `10.1021/` DOI、用户指定的 `www.acs.org` 域和实际文章 host `pubs.acs.org` 路由，公开 source 为 `acs` |
 | `iop` | Crossref routing | selected-browser article HTML -> browser-seeded IOP PDF -> provider-managed abstract_only -> metadata fallback | HTML body figures plus two-stage supplementary downloads; PDF fallback assets | 中 | IOP uses 10.1088/ routing; Radware/hCaptcha pages are rejected; public sources only `iop_html` / `iop_pdf`; no IOP XML/TDM route is registered |
@@ -131,7 +131,7 @@ resolve DOI / landing URL
 - Frontiers canonical XML 路径需要 journal slug，例如 `/journals/marine-science/articles/10.3389/fmars.2023.1101972/xml`。metadata、source URL 或 fulltext link 已含 canonical `/journals/{journal}/articles/{doi}` 时，provider 直接按 `/xml -> /pdf` 顺序尝试，不请求 landing；只有 direct route 不可用、旧 URL 或缺 journal slug 时，才通过 landing redirect/metadata 发现 route。diagnostics 的 `route_discovery.reason` 与 `landing_requested` 会解释为何进入 landing。
 - XML 成功时公开 `source="frontiers_xml"`，source trail 为 `fulltext:frontiers_xml_ok`；XML 不可用、返回 HTML wrapper 或正文不可用时继续尝试 direct HTTP PDF，成功时公开 `source="frontiers_pdf"`。
 - XML renderer 复用 `paper_fetch.providers._article_markdown_jats` 的通用 JATS 层覆盖标题、作者、摘要、正文 section、图表 caption、tables、references 和 supplementary links。JATS 的 HTML-like table 与 CALS `tgroup/colspec` 都进入共享 XML adapter：表头前的整表宽度分组提升为普通文本，正文分组保留为首列行，多层表头按列扁平化，合法 rowspan/局部 colspan/`namest`/`nameend` 做语义展开并视为正常规范化；只有非法或不一致的 span/列定义才标记 `table_layout_degraded`。
-- Frontiers XML 的 figure `xlink:href` 通常是相对 `.tif` 文件名；provider 会把可识别文件名改写为 `/files/Articles/{article_id}/xml-images/{stem}.webp`，再用共享 direct-first asset download。JATS 资产保留原始 `source_href`：明确的绝对 HTTP(S) supplementary URL 可下载；仅由 XML base URL 拼接出来的相对文件名不猜测附件路径，而是指向 canonical full page 的 `#supplementary-material`，并记录 `archive_state=not_archived` 与逐资产失败原因。
+- Frontiers XML 的 figure `xlink:href` 通常是相对 `.tif` 文件名；provider 会把可识别文件名改写为 `/files/Articles/{article_id}/xml-images/{stem}.webp`，再用共享 direct-first asset download。JATS 资产保留原始 `source_href`：明确的绝对 HTTP(S) supplementary URL 可下载；相对附件名在 `all` 下载阶段使用同篇 `/api/v4/articles/{article_id}/supplemental-data` 返回的 `name` / `downloadUrl` 唯一匹配。名称仅归一化大小写和空格/下划线，无唯一匹配时指向 canonical full page 的 `#supplementary-material`，并记录 `archive_state=not_archived` 与逐资产失败原因，不猜测存储地址。
 - `asset_profile=body` 默认下载正文 figure 且忽略 supplementary；`asset_profile=all` 额外归档明确绝对 supplementary URL，并把无法归档的条目显式报告为 partial asset failure。PDF fallback 在 `body/all` 且允许 artifact 落盘时会保存 `pymupdf4llm` 导出的 PDF 正文图片到 `<doi>_assets/`。
 - Frontiers 没有 provider-owned HTML fallback；XML 和 PDF 都不可用时直接进入 metadata-only fallback。
 
@@ -401,8 +401,8 @@ resolve
 - `arxiv`
   - 固定顺序是 `arXiv ID 解析 -> arXiv official HTML -> direct HTTP PDF fallback -> metadata-only`。
   - resolve 支持 `https://arxiv.org/abs/{id}`、`/html/{id}`、`/pdf/{id}`、`arXiv:{id}`、裸 `{id}` / `{id}vN`，以及 `10.48550/arXiv.{id}`。
-  - DOI、URL、裸 ID 或已有 metadata 中能可靠推导 arXiv ID 时，会先构造最小 metadata：`doi`、`arxiv_id`、`landing_page_url`、`html_url`、`pdf_url`、`provider=arxiv`，并立即执行 HTML -> PDF waterfall；主链结束后默认通过内部 Atom API client 执行 arXiv API metadata enrichment，Atom API 从 `RouteExecutionPolicy` 取得 60 秒超时、2 次 transient retry 和 3 秒共享 pacing，最终失败或 429 只记录 warning/diagnostic，不会阻塞全文获取。
-  - official HTML front matter 会补齐 `title`、`authors`、`abstract`、`published`、`primary_category`、canonical DOI、HTML/PDF URL；合并优先级是 arXiv API metadata > HTML front matter > derived arXiv URLs，因此 API 不可用时也不应出现 `Untitled Article` 或 authorless arXiv fulltext。
+  - DOI、URL、裸 ID 或已有 metadata 中能可靠推导 arXiv ID 时，会先构造最小 metadata：`doi`、`arxiv_id`、`landing_page_url`、`html_url`、`pdf_url`、`provider=arxiv`，随后执行 HTML -> PDF waterfall（`all` 且允许资产落盘时先核对摘要页并发现附件）；主链结束后默认通过内部 Atom API client 执行 arXiv API metadata enrichment，Atom API 从 `RouteExecutionPolicy` 取得 60 秒超时、2 次 transient retry 和 3 秒共享 pacing，最终失败或 429 只记录 warning/diagnostic，不会阻塞全文获取。
+  - official HTML front matter 会补齐 `title`、`authors`、`abstract`、`published`、`primary_category`、canonical DOI、HTML/PDF URL；普通字段合并优先级是 arXiv API metadata > HTML front matter > derived arXiv URLs；显式或本次固定的 `vN` 标识和对应 URL 不被 enrichment 改为最新版，因此 API 不可用时也不应出现 `Untitled Article` 或 authorless arXiv fulltext。
   - official HTML 是主路径，直接请求 `https://arxiv.org/html/{id}`，抽取 Markdown、官方 bibliography references 和正文 figure 资产候选；可匹配到下载 URL 的正文 figure 会在原 caption 附近先以内联图片 Markdown 表达，下载后改写为 `body_assets/...` 本地链接；如果 official HTML 只有 `ltx_missing_image` 这类缺失图片占位符，会读取 `https://arxiv.org/e-print/{id}` source 包，按 LaTeX figure 顺序 / caption 匹配恢复图片或将 source PDF 图渲染为 PNG，再插回对应 figure caption 前；HTML 正文不足、非 HTML、不可访问或质量门控失败时直接继续 PDF fallback。
   - official HTML 渲染前会做 arXiv/LaTeXML 专用语义块预处理：`figure.ltx_table` 和裸 `table.ltx_tabular` 复用共享 HTML table renderer 输出 Markdown 表格或 key-value 行，单个全宽 `colspan` 标题行会提升为表格前普通文本，`ltx_listing` / algorithm block 输出标题和 fenced pseudo-code，并用 placeholder 保持原文位置；无法插回的位置会追加到文末并记录 warning。
   - official HTML 的 section kind 由清洗后的 `article.ltx_document` DOM 结构 hint 驱动：`References` / `Bibliography` 与 Data / Code Availability 继续按共享语义分类，其它由正文渲染链路输出的 article 标题默认作为正文；页面外部 metrics / citation chrome 不进入 arXiv HTML 解析范围。
@@ -426,7 +426,7 @@ resolve
   - 固定顺序是 `landing HTML -> public JATS XML -> direct HTTP PDF fallback -> metadata-only`。
   - canonical XML/PDF URL 由 Frontiers landing redirect 或 landing metadata 发现，下载都走 direct HTTP，不需要本地浏览器运行时或登录态。
   - XML 成功必须解析为 JATS `article`，HTML wrapper、challenge、空 payload 或没有正文/摘要/参考文献的 XML 都会失败并继续 PDF fallback。
-  - XML figure 文件名会重写为 `/files/Articles/{article_id}/xml-images/*.webp` 下载 URL；supplementary 只保留 canonical full page anchor，不强拼附件直链。
+  - XML figure 文件名会重写为 `/files/Articles/{article_id}/xml-images/*.webp` 下载 URL；supplementary 相对附件名在 `all` 下载阶段通过 `/api/v4/articles/{article_id}/supplemental-data` 的 `name` / `downloadUrl` 唯一匹配；名称仅归一化大小写与空格/下划线，无唯一匹配时保留 canonical full page anchor 和 `not_archived` 诊断。
   - PDF fallback 的正文 Markdown 来自共享 PDF 转换；`body/all` 且允许 artifact 落盘时会保存 PDF 导出的正文图片。
   - 成功时公开 `source="frontiers_xml"` 或 `source="frontiers_pdf"`。
 
@@ -672,20 +672,24 @@ CLI、Python API、MCP 当前默认值如下：
 - Springer/Nature 优先下载已知原图，仅在候选失败或缺失时解析图页，再考虑预览；同次资产解析保留预算、失败来源和落盘语义，表格页面补齐照常执行。
 - Springer/Nature HTML route 每个 attempt 创建独立的安全 cookie-aware opener，重定向链内保存并回放 cookie；若 final URL 首次出现 `cookies_not_supported`，丢弃 session 并用全新 opener 完整重试一次，第二次仍失败才进入既有 PDF waterfall。session 不跨 fetch/provider 共享，Cookie/Set-Cookie/Authorization 不进入 diagnostics。
 - Elsevier XML 的 `body` 只下载 `image` / `table_asset`；公式上下文引用的 `fx*` 官方对象按正文 `image` 下载，普通附录 Figure 的 `fx*` 仍保持 `appendix_image` 分类。
-- Elsevier XML 的 `all` 额外下载 `supplementary` references。
+- Elsevier XML 的 `all` 额外下载 `supplementary` references。MathML `altimg` 引用的公式替代图像不作为独立附件下载；object 与 attachment 两种表示均按该引用排除，公式渲染和原有图像降级索引保持有效。
 - Elsevier supplementary 统一映射到 `kind="supplementary"`、`section="supplementary"` 和 `download_tier="supplementary_file"`。
+- Elsevier 作者稿的 `am`、`am.pdf` 与官方 `1-s2.0-…-am[.pdf]` 别名合并为同一资产；同优先级保留先注册的 object，只下载、登记和展示一次，DOCX 等其他补充文件保持独立。
 - Elsevier 正文资产遇到 timeout、TLS、DNS、connection reset/closed 等网络失败时，只对失败项串行重试一轮。
 - 明确 HTTP status、权限/认证类或非 HTTP scheme 失败不自动重试。
 
 #### Supplementary 范围与命名
 
-- `wiley` / `science` / `pnas` / `ams` / `annualreviews` / `acs` / `iop` / `aip` / `mdpi` / `tandf` 的 `asset_profile=all` 会把可识别 supplementary 作为独立文件附件下载。Annual Reviews 当前不扩大 supplementary scope；IOP 只把文章页的同 DOI `/data[N]` 当索引，并从索引明确的 `SM数字` 链接下载真实附件。
+- `wiley` / `science` / `pnas` / `ams` / `annualreviews` / `acs` / `iop` / `aip` / `mdpi` / `tandf` 的 `asset_profile=all` 会把可识别 supplementary 作为独立文件附件下载。Annual Reviews 从原始 `#supplementary_data` 接受官方 `/deliver/fulltext/` PDF / MPG 直链，且 `itemId` 必须匹配父论文 DOI；IOP 只把文章页的同 DOI `/data[N]` 当索引，并从索引明确的 `SM数字` 或 `supp数字` 链接下载真实附件。
 - 这条链路不因 supplementary 失败重新下载已成功的正文 figure。
-- `wiley` supplementary 只从 `Supporting Information` 区块抽取。
+- `wiley` supplementary 只从 `Supporting Information` 区块抽取，并在文章浏览器会话内点击下载：正文就绪后按需展开目标面板，每轮最多等待 5 秒确认链接可见；仍折叠时重新定位控件，最多点击 3 次，已展开时不重复点击。链接可交互后使用下载事件和对应响应取得文件与元信息。页面操作共享 60 秒文件时限并受剩余请求预算约束；缺失链接、面板未就绪、验证页或下载超时保留诊断，不改回 API 文件请求或刷新会话后重复点击。
 - `wiley` 只接受 `/action/downloadSupplement`、结构化 supplementary link 属性或 `sup-*` supporting file 链接。
 - 正文 `<figure>` 里的 `/cms/asset/...fig-*.jpg|png|webp` 只保留为 figure 资产。
 - `downloadSupplement` query 中的 `file`、`filename`、`attachment`、`download` 优先作为真实文件名。
 - 布尔型 `download=true` 不作为文件名。
+- AIP 本站 `/article-supplement/.../zip/...` 提供 `.zip` 文件名提示；Taylor & Francis 从已识别的 `downloadSupplement` URL 的 `file` 参数提供文件名提示。均复用现有安全命名与落盘逻辑。
+- AMS 补充范围包含正文明确引用的本篇 `/supplemental/.../{article}.xml/...` 附件，并在下载前按 URL 合并重复引用。
+- Oxford 优先使用 `.dataSuppLink` 附件区的真实资源，排除正文 PDF 和非 HTTP(S) 导航；同一 CDN 附件在下载前忽略 `Expires`、`Signature`、`Key-Pair-Id`、`Policy` 后去重，其他参数保留，下载使用附件区的完整 URL。
 - `science` / `pnas` supplementary 只从真实 supplementary / supporting section 子树抽取。
 - `science` / `pnas` 只保留 publisher `/doi/suppl/.../suppl_file/...` 附件。
 - Data Availability 普通数据链接、页内导航和 section 内引用文献 PDF 不归 supplementary。
@@ -1033,6 +1037,10 @@ arXiv 路线当前不需要 publisher 凭证；official HTML 主路径不依赖�
 - `html_route` 固定标为 `ok`，表示可直接请求 arXiv official HTML 主路径。
 - HTML 不可用、非 HTML、正文不足或质量门控失败时，直接进入 PDF fallback。
 - metadata enrichment 默认启用，使用项目内部 Atom API client 调用 `https://export.arxiv.org/api/query` 的 `id_list` 精确查询，不依赖 PyPI `arxiv` / `feedparser` 包，也不实现关键词搜索、作者搜索或分页搜索；API 失败只产生 warning，不会阻断已经成功的 HTML/PDF 正文 payload。
+- 资产默认仍为 `body`。`asset_profile=all` 且允许资产落盘时，先读取官方 `/abs/{id}` 核对身份；无版本输入使用页面明确的本版本链接固定本次正文及附件版本，显式 `vN` 严格保留，后续 API enrichment 不改写版本。`none/body` 或禁止资产落盘不增加附件发现请求。
+- 从摘要页 Ancillary files 区域进入 `/src/{版本化ID}/anc`，按详情页完整列表下载同论文、同版本的官方 `a.anc-file-name` 链接；支持 `.nb`、`.m`、PDF 和嵌套路径，按规范化 URL 去重并保留来源路径。本地文件沿用安全文件名与重名处理，不按远端目录建树。
+- HTML 和 PDF fallback 都会将独立附件各登记一次并展示在 `Supplementary Materials`；PDF 正文图继续保留，只有附件的结果也不再标为 text-only。附件齐全不改变 PDF fallback 的降级与 trace。
+- 正常摘要页无附件区域时返回空集合；发现请求、身份或详情完整性校验失败记录 `arxiv_ancillary_discovery_failed`，下载失败沿用现有资产原因，均保留成功正文。附件复用现有下载器、共享资产预算、限速与最多 2 个 worker；不使用浏览器、源码包附件 fallback、外部数据仓库，也不归档源码包中的普通文件。
 - arXiv 全文路线消费 official HTML；source 包只用于 official HTML 成功但正文图片是缺失占位符时恢复 figure 资产。若 official HTML 缺失或质量不过关，会直接进入 PDF fallback。
 - arXiv official HTML 仍兼容 ar5iv/LaTeXML 的 `ltx_*` DOM contract；这些 selector 集中在 provider 数据表中，并为普通 `article > section > h*/p` 标题、摘要和参考文献结构保留 fallback。
 - arXiv HTML 系列解析器集中由 `paper_fetch.providers._arxiv_parsing.ARXIV_HTML_PARSER` 指定；正常安装使用 `choose_parser()` 选择可用解析器，arXiv fixture 单测覆盖该路径。
@@ -1106,7 +1114,7 @@ IEEE direct landing/REST HTML/PDF/资产与 selected-browser recovery 路线当�
 
 - `wiley` / `science` / `pnas` / `ams` / `annualreviews` / `royalsocietypublishing` / `acs` / `iop` / `aip` / `mdpi` / `tandf` 的 browser HTML fetch 会先等待 provider 正文 DOM 命中并连续两次轮询稳定，再执行 pre-extraction challenge / paywall 判定。
 - PNAS 是明确例外于通用 fast attempt 的单次完整导航：候选固定按 canonical `/doi/{doi}`、`/doi/full/{doi}`、DOI resolver 排序；readiness 与解析器统一使用 `#bodymatter`、`#bodymatter .bodymatter`、`#bodymatter .core-container` 和 `#bodymatter .article__body`，正文已满足抽取条件时不再等待站点上不存在的顶层 `.core-container`。readiness 预算配置为 8 秒，但同步浏览器调用不能被预算检查打断，实际耗时可能超出；超时后继续检查最后 HTML，不跳过 block detection 或抽取。
-- AIP 直接进入正常 HTML attempt，不启用媒体拦截或 Adzerk/Crossmark 空脚本替换；非持久会话和正文 readiness 保持不变。
+- AIP 直接进入正常 HTML attempt，正文 readiness 最长等待 90 秒，并受请求剩余总预算限制；正文连续两次轮询稳定后提前结束等待。超时后保留 readiness timeout 诊断并验收最后 HTML，后续 PDF 路线继续使用剩余预算；同步浏览器调用可能使实际耗时超出预算。不启用媒体拦截或 Adzerk/Crossmark 空脚本替换，保持非持久会话。
 - Wiley 优先尝试已验证的 `/doi/{doi}`。导航返回 401/403 时继续执行有界正文 readiness 和 DOI/阻断信号复核；未确认的候选保持 fail closed 并继续下一 URL，已确认候选还须通过 Markdown/全文 availability，且始终保留真实 HTTP 状态。Science 在保持正文/资源发现回归通过的前提下阻断 image/font/media。
 - Science 的最终状态取自当前候选中最新、已完成且与当前 URL 和目标 DOI 匹配的主框架导航响应；初始响应保留在 trace 中，iframe、未完成或无关响应不能覆盖文章状态。
 - Royal Society 的 Silverchair `.widget-ArticleFulltext .article-body`、`.widget-ArticleFulltext`、`.article-body` 与 `.article-content` 已进入稳定正文 selector 表，正文出现后不再落入固定 8 秒等待。
@@ -1130,7 +1138,7 @@ IEEE direct landing/REST HTML/PDF/资产与 selected-browser recovery 路线当�
 ### IOP Publishing
 
 - `asset_profile=body` 只处理正文 figure；`_online` / `_lr` IOP CDN 图片会派生 `_hr` 候选，已渲染成 LaTeX 的公式不会再把 GIF fallback 当正文图。
-- `asset_profile=all` 使用有界两阶段流程：文章页只识别 `#supplDataLink` 或同 DOI `/article/{doi}/data[N]` 索引，不把索引 HTML 当附件；索引 URL 先规范化、脱敏并去重，再把同一个 `BrowserRuntimeConfig`、storage-state、文章浏览器 cookie 和 Referer 传给共享 browser file fetcher。当前 `RuntimeContext` 缓存索引解析结果与确定性失败，只从 `#supplementarydata` 中接受 `id=SM数字` 的文件链接。生产路径配置缺失时返回逐资产结构化失败。Office 文档、压缩包、数据表、图片或视频都不受通用后缀白名单限制。
+- `asset_profile=all` 使用有界两阶段流程：文章页只识别 `#supplDataLink` 或同 DOI `/article/{doi}/data[N]` 索引，不把索引 HTML 当附件；索引 URL 先规范化、脱敏并去重，再把同一个 `BrowserRuntimeConfig`、storage-state、文章浏览器 cookie 和 Referer 传给共享 browser file fetcher。当前 `RuntimeContext` 缓存索引解析结果与确定性失败，只从 `#supplementarydata` 中接受 `id=SM数字` 或 `id=supp数字` 的文件链接。生产路径配置缺失时返回逐资产结构化失败。Office 文档、压缩包、数据表、图片或视频都不受通用后缀白名单限制。
 - figure 的 Standard/High-resolution 操作链接、页脚 WeChat QR、索引页未编号链接不会进入 supplementary。索引被 challenge 阻断、父 DOI 不匹配、缺少明确 scope 或没有真实附件时，会写入 `article.quality.asset_failures`，因此资产验收不会误报 `complete`。
 - publisher 返回的 AWS 签名附件 URL 仅用于即时下载，不持久化；附件按 `source_ref + 脱敏 URL` 去重，最终资产和失败诊断会脱敏 `X-Amz-*`、`Signature`、`AWSAccessKeyId` 参数。独立 Radware/hCaptcha 页面仍 fail closed，HTML/PDF 成功 source 分别是 `iop_html` / `iop_pdf`。
 - 当前没有注册 IOP TDM XML/API route；provider status 只汇总实际可执行的 metadata、`iop_html`、`iop_pdf` 与 supplementary 能力，不会因不存在的占位 route 被降为 partial。
@@ -1148,7 +1156,7 @@ IEEE direct landing/REST HTML/PDF/资产与 selected-browser recovery 路线当�
 
 - routing: 通过 `10.1146/` DOI prefix、`annualreviews.org` / `www.annualreviews.org` domain 和 Annual Reviews publisher alias 命中；Knowable Magazine、issue page 和非 article landing page 不作为该 provider 的成功全文路线。
 - waterfall: selected browser 渲染 `/content/journals/{doi}` 或 `/doi/{doi}` landing/full-text HTML，并要求 `#html_fulltext` 或 `#itemFullTextId` 填充；HTML 不足时使用 Crossref / landing PDF URL 或 `/doi/pdf/{doi}` 执行 browser-seeded PDF fallback；仍失败时进入 provider-managed `abstract_only`，最后交给 metadata-only fallback。
-- asset_profile: HTML 路线默认使用 `body`，支持正文 figure/table 资产抽取并在下载后改写正文内联 figure 链接；正文中的 download/media anchor、`srcset`、`data-original` 等直达原图优先，只有缺失原图的 figure 才使用共享 runtime page 恢复。`all` 当前不扩大 supplementary scope，PowerPoint 链接不作为 supplementary material；PDF fallback 在 `body/all` 且允许 artifact 落盘时会保存 PDF 导出的正文图片。
+- asset_profile: HTML 路线默认使用 `body`，支持正文 figure/table 资产抽取并在下载后改写正文内联 figure 链接；正文中的 download/media anchor、`srcset`、`data-original` 等直达原图优先，只有缺失原图的 figure 才使用共享 runtime page 恢复。`all` 从原始 `#supplementary_data` 区域下载官方 `/deliver/fulltext/` PDF / MPG 附件，核对 `itemId` 中的父论文 DOI、按下载 URL 去重并保留标题与说明；成功附件写入 Article 和本地 Markdown 链接，失败保留逐项诊断。`body` / `none` 不下载附件，PowerPoint、YouTube iframe 和 multimedia 展示页不作为附件文件；PDF fallback 在 `body/all` 且允许 artifact 落盘时会保存 PDF 导出的正文图片。
 - table rendering: `.html-fulltext-inline-table` 复用 provider-neutral table grid，按列扁平化多层表头并语义展开 rowspan/colspan；Annual Reviews 层只补 table footnotes，不再维护独立的 colspan 填充器。
 - status: 需要 Playwright/browser runtime，不需要 provider API credential；probe 级别是 routing signal，成功 source 分别为 `annualreviews_html` 和 `annualreviews_pdf`。
 

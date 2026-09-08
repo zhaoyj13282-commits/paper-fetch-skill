@@ -210,6 +210,7 @@ def test_aip_browser_client_profile_and_author_fallback() -> None:
     assert not client.profile.empty_script_response_urls
     assert not client.profile.blocked_resource_types
     assert not client.profile.fast_html_attempt
+    assert client.profile.html_readiness_budget_seconds == 90.0
     assert not client.profile.persistent_storage_state
 
 
@@ -478,3 +479,22 @@ def test_aip_download_related_assets_contract_marker(monkeypatch, tmp_path) -> N
     assert Path(downloaded["path"]).read_bytes() == b"fake-image"
     assert downloaded["downloaded_bytes"] == len(b"fake-image")
     assert result["asset_failures"] == []
+
+
+def test_aip_zip_attachment_filename_uses_endpoint_format() -> None:
+    url = "https://pubs.aip.org/aip/adv/article-supplement/2820011/zip/125205_1_epaps"
+    assets = _aip_html.scoped_asset_extractor(
+        f'<a href="{url}">Supplementary material</a>',
+        AIP_STRUCTURE_LANDING,
+        asset_profile="all",
+    )
+    assert len(assets) == 1
+    assert assets[0]["filename_hint"] == "125205_1_epaps.zip"
+    assert assets[0]["url"] == url
+
+    other = _aip_html.scoped_asset_extractor(
+        '<a href="https://example.org/article-supplement/1/zip/other">Supplement</a>',
+        AIP_STRUCTURE_LANDING,
+        asset_profile="all",
+    )
+    assert "filename_hint" not in other[0]

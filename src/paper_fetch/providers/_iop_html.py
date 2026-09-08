@@ -110,7 +110,7 @@ IOP_HIGH_RESOLUTION_FIGURE_URL_PATTERN = re.compile(
     r"(?P<stem>.+)_(?:lr|online)(?P<suffix>\.(?:jpe?g|png|gif|webp))(?:[?#].*)?$",
     re.IGNORECASE,
 )
-IOP_SUPPLEMENTARY_ATTACHMENT_ID_PATTERN = re.compile(r"^SM\d+$", re.IGNORECASE)
+IOP_SUPPLEMENTARY_ATTACHMENT_ID_PATTERN = re.compile(r"^(?:SM|supp)\d+$", re.IGNORECASE)
 # SITE_UI_COPY_REGRESSION_MARKER: IOPScience article action labels; keep tied to provider cleanup tests.
 # STRUCTURAL_UI_COPY_HOOK: provider cleanup policy removes these only from IOP article chrome.
 IOP_MARKDOWN_PROMO_TOKENS = (
@@ -828,7 +828,7 @@ def extract_supplementary_data_assets(
     *,
     expected_doi: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Extract real `SM####` attachments from an IOP supplementary data page."""
+    """Extract real `SM####` / `supp####` attachments from an IOP supplementary data page."""
 
     soup = BeautifulSoup(html_text, choose_parser())
     scope = soup.select_one("#supplementarydata")
@@ -908,7 +908,7 @@ def extract_supplementary_data_assets(
     if not assets:
         raise HtmlExtractionFailure(
             "iop_supplementary_index_empty",
-            "IOP supplementary data index declared no SM-numbered attachments.",
+            "IOP supplementary data index declared no SM- or supp-numbered attachments.",
         )
     return assets
 

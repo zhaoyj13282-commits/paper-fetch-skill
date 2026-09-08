@@ -1171,3 +1171,31 @@ class AmsProviderTests(AtyponBrowserWorkflowProviderTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_ams_inline_supplements_are_scoped_to_parent_and_deduplicated() -> None:
+    body, supplements = extract_browser_workflow_asset_html_scopes(
+        _fixture_html(AMS_DOI), AMS_LANDING_URL, "ams"
+    )
+    assets = _ams_assets.scoped_asset_extractor(
+        body, AMS_LANDING_URL, asset_profile="all", supplementary_html_text=supplements
+    )
+    found = [a for a in assets if a["kind"] == "supplementary"]
+    assert len(found) == 1
+    assert found[0]["url"].endswith("10.1175_JCLI-D-23-0738.s1.pdf")
+    url = found[0]["url"]
+    rejected = [
+        url.replace("JCLI-D-23-0738.1.xml", "JCLI-D-23-9999.1.xml"),
+        url.replace("journals.ametsoc.org", "example.org"),
+        AMS_PDF_URL,
+        "javascript:;",
+    ]
+    assert (
+        _ams_assets._extract_ams_supplementary_assets(
+            "".join(
+                f'<a href="{href}">Supplementary material</a>' for href in rejected
+            ),
+            AMS_LANDING_URL,
+        )
+        == []
+    )

@@ -562,14 +562,18 @@ def test_iop_real_article_replay_does_not_promote_figure_controls_or_qr_to_suppl
     assert not any("wechat" in str(asset).lower() for asset in assets)
 
 
-def test_iop_data_page_extracts_only_sm_numbered_real_attachments() -> None:
+@pytest.mark.parametrize("prefix", ["SM", "supp"])
+def test_iop_data_page_extracts_only_sm_numbered_real_attachments(prefix: str) -> None:
     assets = _iop_html.extract_supplementary_data_assets(
-        _iop_supplementary_data_html(),
+        _iop_supplementary_data_html().replace('id="SM', f'id="{prefix}'),
         f"{IOP_CURRENT_SUPPLEMENTARY_LANDING}/data",
         expected_doi=IOP_CURRENT_SUPPLEMENTARY_DOI,
     )
 
-    assert [asset["source_ref"] for asset in assets] == ["SM0001", "SM0002"]
+    assert [asset["source_ref"] for asset in assets] == [
+        f"{prefix}0001",
+        f"{prefix}0002",
+    ]
     assert [asset["filename_hint"] for asset in assets] == [
         "erclae2d89supp1.docx",
         "table-s1.xlsx",
@@ -703,6 +707,7 @@ def test_iop_all_profile_expands_data_index_before_existing_asset_downloader(
     assert "X-Amz-Signature=%2A%2A%2A" in result["assets"][0]["download_url"]
     assert "X-Amz-Signature=test" not in result["assets"][0]["source_url"]
     assert len(supplementary_assets) == 2
+    assert supplementary_assets[0]["url"] == IOP_TEST_SIGNED_SUPPLEMENTARY_URL
     assert supplementary_assets[0]["source_ref"] == "SM0001"
     assert supplementary_assets[0]["filename_hint"] == "erclae2d89supp1.docx"
     assert not any(asset.get("url") == index_url for asset in passed_assets)

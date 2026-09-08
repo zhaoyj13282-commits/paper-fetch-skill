@@ -534,6 +534,7 @@ def test_tandf_article_assets_keep_body_figures_and_scope_supplement() -> None:
         "https://www.tandfonline.com/action/downloadSupplement?"
     )
     assert supplementary[0]["url"].endswith("tgrs_a_2667034_sm1980.docx")
+    assert supplementary[0]["filename_hint"] == "tgrs_a_2667034_sm1980.docx"
 
 
 def test_tandf_download_related_assets_contract_marker(monkeypatch, tmp_path) -> None:

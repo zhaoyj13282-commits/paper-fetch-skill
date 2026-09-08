@@ -191,6 +191,79 @@ def _api_atom_response(
     )
 
 
+# Official arXiv page fragments retrieved 2026-09-08; retained DOM and full
+# ancillary lists (not the source archives or the 103 binary attachments).
+ARXIV_ANCILLARY_PAGES = {
+    # https://arxiv.org/abs/0811.2625v2 and https://arxiv.org/src/0811.2625v2/anc
+    "0811.2625v2": (
+        """<meta content="0811.2625" name="citation_arxiv_id"/>
+<div id="abs"><h1 class="title mathjax"><span class="descriptor">Title:</span>Maximizing the number of q-colorings</h1><td class="tablecell arxividv">(or <span class="arxivid">
+<a href="https://arxiv.org/abs/0811.2625v2">arXiv:0811.2625v2</a> [math.CO]</span> for this version)
+          </td></div>
+<div class="ancillary">
+<span class="descriptor">Ancillary-file links:</span>
+<h2>Ancillary files <span style="font-size:75%;font-weight:normal">(<a href="/src/0811.2625v2/anc">details</a>)</span>:</h2>
+<ul> <li><a class="anc-file-name" href="/src/0811.2625v2/anc/solve-sparse-opt-check-small.nb">solve-sparse-opt-check-small.nb</a></li> <li><a class="anc-file-name" href="/src/0811.2625v2/anc/solve-sparse-opt-check-small.pdf">solve-sparse-opt-check-small.pdf</a></li></ul>
+</div>""",
+        """<div id="content">
+<h2>Ancillary files for <a href="/abs/0811.2625v2">arXiv:0811.2625v2</a></h2>
+<p>There are 2 ancillary files associated with this article. You may download
+them individually using the links below, or you
+may <a href="/src/0811.2625v2">download the entire source package</a> as a
+gzipped tar file (.tar.gz). See <a href="/help/ancillary_files">ancillary files
+help</a> for more information about arXiv support for ancillary material.
+</p>
+<ul><li><a class="anc-file-name" href="/src/0811.2625v2/anc/solve-sparse-opt-check-small.nb">solve-sparse-opt-check-small.nb</a>(112.221 KB)</li><li><a class="anc-file-name" href="/src/0811.2625v2/anc/solve-sparse-opt-check-small.pdf">solve-sparse-opt-check-small.pdf</a>(88.592 KB)</li></ul>
+</div>""",
+    ),
+    # https://arxiv.org/abs/2606.00587v2 and https://arxiv.org/src/2606.00587v2/anc
+    "2606.00587v2": (
+        """<meta content="2606.00587" name="citation_arxiv_id"/>
+<div id="abs"><h1 class="title mathjax"><span class="descriptor">Title:</span>Hashprice moderates the electricity demand response of Bitcoin miners</h1><td class="tablecell arxividv">(or <span class="arxivid">
+<a href="https://arxiv.org/abs/2606.00587v2">arXiv:2606.00587v2</a> [econ.EM]</span> for this version)
+          </td></div>
+<div class="ancillary">
+<span class="descriptor">Ancillary-file links:</span>
+<h2>Ancillary files <span style="font-size:75%;font-weight:normal">(<a href="/src/2606.00587v2/anc">details</a>)</span>:</h2>
+<ul> <li><a class="anc-file-name" href="/src/2606.00587v2/anc/supplementary_material.pdf">supplementary_material.pdf</a></li></ul>
+</div>""",
+        """<div id="content">
+<h2>Ancillary files for <a href="/abs/2606.00587v2">arXiv:2606.00587v2</a></h2>
+<p>There are 1 ancillary files associated with this article. You may download
+them individually using the links below, or you
+may <a href="/src/2606.00587v2">download the entire source package</a> as a
+gzipped tar file (.tar.gz). See <a href="/help/ancillary_files">ancillary files
+help</a> for more information about arXiv support for ancillary material.
+</p>
+<ul><li><a class="anc-file-name" href="/src/2606.00587v2/anc/supplementary_material.pdf">supplementary_material.pdf</a>(2.974 MB)</li></ul>
+</div>""",
+    ),
+    # https://arxiv.org/abs/0905.2326v2 and https://arxiv.org/src/0905.2326v2/anc
+    "0905.2326v2": (
+        """<meta content="0905.2326" name="citation_arxiv_id"/>
+<div id="abs"><h1 class="title mathjax"><span class="descriptor">Title:</span>The Ultraviolet Behavior of N=8 Supergravity at Four Loops</h1><td class="tablecell arxividv">(or <span class="arxivid">
+<a href="https://arxiv.org/abs/0905.2326v2">arXiv:0905.2326v2</a> [hep-th]</span> for this version)
+          </td></div>
+<div class="ancillary">
+<span class="descriptor">Ancillary-file links:</span>
+<h2>Ancillary files <span style="font-size:75%;font-weight:normal">(<a href="/src/0905.2326v2/anc">details</a>)</span>:</h2>
+<ul> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/GuideToNeq8Files.nb">GuideToNeq8Files.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/GuideToNeq8Files.pdf">GuideToNeq8Files.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA1.nb">nb/SUGRA1.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA10.nb">nb/SUGRA10.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA11.nb">nb/SUGRA11.nb</a></li></ul><div id="long-anc-list"><ul>
+<li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA12.nb">nb/SUGRA12.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA13.nb">nb/SUGRA13.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA14.nb">nb/SUGRA14.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA15.nb">nb/SUGRA15.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA16.nb">nb/SUGRA16.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA17.nb">nb/SUGRA17.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA18.nb">nb/SUGRA18.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA19.nb">nb/SUGRA19.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA2.nb">nb/SUGRA2.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA20.nb">nb/SUGRA20.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA21.nb">nb/SUGRA21.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA22.nb">nb/SUGRA22.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA23.nb">nb/SUGRA23.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA24.nb">nb/SUGRA24.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA25.nb">nb/SUGRA25.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA26.nb">nb/SUGRA26.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA27.nb">nb/SUGRA27.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA28.nb">nb/SUGRA28.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA29.nb">nb/SUGRA29.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA3.nb">nb/SUGRA3.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA30.nb">nb/SUGRA30.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA31.nb">nb/SUGRA31.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA32.nb">nb/SUGRA32.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA33.nb">nb/SUGRA33.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA34.nb">nb/SUGRA34.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA35.nb">nb/SUGRA35.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA36.nb">nb/SUGRA36.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA37.nb">nb/SUGRA37.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA38.nb">nb/SUGRA38.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA39.nb">nb/SUGRA39.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA4.nb">nb/SUGRA4.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA40.nb">nb/SUGRA40.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA41.nb">nb/SUGRA41.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA42.nb">nb/SUGRA42.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA43.nb">nb/SUGRA43.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA44.nb">nb/SUGRA44.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA45.nb">nb/SUGRA45.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA46.nb">nb/SUGRA46.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA47.nb">nb/SUGRA47.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA48.nb">nb/SUGRA48.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA49.nb">nb/SUGRA49.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA5.nb">nb/SUGRA5.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA50.nb">nb/SUGRA50.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA6.nb">nb/SUGRA6.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA7.nb">nb/SUGRA7.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA8.nb">nb/SUGRA8.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA9.nb">nb/SUGRA9.nb</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA1.pdf">pdf/SUGRA1.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA10.pdf">pdf/SUGRA10.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA11.pdf">pdf/SUGRA11.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA12.pdf">pdf/SUGRA12.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA13.pdf">pdf/SUGRA13.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA14.pdf">pdf/SUGRA14.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA15.pdf">pdf/SUGRA15.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA16.pdf">pdf/SUGRA16.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA17.pdf">pdf/SUGRA17.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA18.pdf">pdf/SUGRA18.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA19.pdf">pdf/SUGRA19.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA2.pdf">pdf/SUGRA2.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA20.pdf">pdf/SUGRA20.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA21.pdf">pdf/SUGRA21.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA22.pdf">pdf/SUGRA22.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA23.pdf">pdf/SUGRA23.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA24.pdf">pdf/SUGRA24.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA25.pdf">pdf/SUGRA25.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA26.pdf">pdf/SUGRA26.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA27.pdf">pdf/SUGRA27.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA28.pdf">pdf/SUGRA28.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA29.pdf">pdf/SUGRA29.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA3.pdf">pdf/SUGRA3.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA30.pdf">pdf/SUGRA30.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA31.pdf">pdf/SUGRA31.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA32.pdf">pdf/SUGRA32.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA33.pdf">pdf/SUGRA33.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA34.pdf">pdf/SUGRA34.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA35.pdf">pdf/SUGRA35.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA36.pdf">pdf/SUGRA36.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA37.pdf">pdf/SUGRA37.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA38.pdf">pdf/SUGRA38.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA39.pdf">pdf/SUGRA39.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA4.pdf">pdf/SUGRA4.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA40.pdf">pdf/SUGRA40.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA41.pdf">pdf/SUGRA41.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA42.pdf">pdf/SUGRA42.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA43.pdf">pdf/SUGRA43.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA44.pdf">pdf/SUGRA44.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA45.pdf">pdf/SUGRA45.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA46.pdf">pdf/SUGRA46.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA47.pdf">pdf/SUGRA47.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA48.pdf">pdf/SUGRA48.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA49.pdf">pdf/SUGRA49.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA5.pdf">pdf/SUGRA5.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA50.pdf">pdf/SUGRA50.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA6.pdf">pdf/SUGRA6.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA7.pdf">pdf/SUGRA7.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA8.pdf">pdf/SUGRA8.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA9.pdf">pdf/SUGRA9.pdf</a></li> <li><a class="anc-file-name" href="/src/0905.2326v2/anc/rawData/Neq8FourLoops.m">rawData/Neq8FourLoops.m</a></li></ul></div><ul class="no-bullet"><li><a class="anc-additional-file" href="javascript:toggleList('long-anc-list','98 additional files not shown');" id="toggle" title="Show entire file list.">(98 additional files not shown)</a><noscript> You must enabled JavaScript to view entire file list.</noscript></li></ul>
+</div>""",
+        """<div id="content">
+<h2>Ancillary files for <a href="/abs/0905.2326v2">arXiv:0905.2326v2</a></h2>
+<p>There are 103 ancillary files associated with this article. You may download
+them individually using the links below, or you
+may <a href="/src/0905.2326v2">download the entire source package</a> as a
+gzipped tar file (.tar.gz). See <a href="/help/ancillary_files">ancillary files
+help</a> for more information about arXiv support for ancillary material.
+</p>
+<ul><li><a class="anc-file-name" href="/src/0905.2326v2/anc/GuideToNeq8Files.nb">GuideToNeq8Files.nb</a>(198.829 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/GuideToNeq8Files.pdf">GuideToNeq8Files.pdf</a>(311.242 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA1.nb">nb/SUGRA1.nb</a>(35.697 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA10.nb">nb/SUGRA10.nb</a>(38.452 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA11.nb">nb/SUGRA11.nb</a>(37.988 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA12.nb">nb/SUGRA12.nb</a>(36.648 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA13.nb">nb/SUGRA13.nb</a>(78.492 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA14.nb">nb/SUGRA14.nb</a>(38.775 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA15.nb">nb/SUGRA15.nb</a>(393.669 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA16.nb">nb/SUGRA16.nb</a>(35.986 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA17.nb">nb/SUGRA17.nb</a>(36.374 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA18.nb">nb/SUGRA18.nb</a>(40.16 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA19.nb">nb/SUGRA19.nb</a>(68.286 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA2.nb">nb/SUGRA2.nb</a>(35.669 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA20.nb">nb/SUGRA20.nb</a>(46.613 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA21.nb">nb/SUGRA21.nb</a>(131.981 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA22.nb">nb/SUGRA22.nb</a>(175.58 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA23.nb">nb/SUGRA23.nb</a>(435.675 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA24.nb">nb/SUGRA24.nb</a>(68.837 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA25.nb">nb/SUGRA25.nb</a>(44.288 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA26.nb">nb/SUGRA26.nb</a>(554.998 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA27.nb">nb/SUGRA27.nb</a>(126.325 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA28.nb">nb/SUGRA28.nb</a>(54.331 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA29.nb">nb/SUGRA29.nb</a>(39.022 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA3.nb">nb/SUGRA3.nb</a>(36.539 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA30.nb">nb/SUGRA30.nb</a>(41.399 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA31.nb">nb/SUGRA31.nb</a>(80.549 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA32.nb">nb/SUGRA32.nb</a>(401.803 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA33.nb">nb/SUGRA33.nb</a>(287.94 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA34.nb">nb/SUGRA34.nb</a>(247.683 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA35.nb">nb/SUGRA35.nb</a>(284.033 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA36.nb">nb/SUGRA36.nb</a>(558.729 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA37.nb">nb/SUGRA37.nb</a>(157.591 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA38.nb">nb/SUGRA38.nb</a>(363.367 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA39.nb">nb/SUGRA39.nb</a>(289.609 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA4.nb">nb/SUGRA4.nb</a>(35.878 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA40.nb">nb/SUGRA40.nb</a>(153.204 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA41.nb">nb/SUGRA41.nb</a>(74.756 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA42.nb">nb/SUGRA42.nb</a>(263.583 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA43.nb">nb/SUGRA43.nb</a>(371.931 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA44.nb">nb/SUGRA44.nb</a>(256.918 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA45.nb">nb/SUGRA45.nb</a>(1.097 MB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA46.nb">nb/SUGRA46.nb</a>(298.732 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA47.nb">nb/SUGRA47.nb</a>(1.093 MB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA48.nb">nb/SUGRA48.nb</a>(140.8 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA49.nb">nb/SUGRA49.nb</a>(205.708 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA5.nb">nb/SUGRA5.nb</a>(39.475 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA50.nb">nb/SUGRA50.nb</a>(483.769 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA6.nb">nb/SUGRA6.nb</a>(36.552 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA7.nb">nb/SUGRA7.nb</a>(36.473 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA8.nb">nb/SUGRA8.nb</a>(36.069 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/nb/SUGRA9.nb">nb/SUGRA9.nb</a>(38.669 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA1.pdf">pdf/SUGRA1.pdf</a>(22.182 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA10.pdf">pdf/SUGRA10.pdf</a>(24.239 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA11.pdf">pdf/SUGRA11.pdf</a>(24.093 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA12.pdf">pdf/SUGRA12.pdf</a>(22.716 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA13.pdf">pdf/SUGRA13.pdf</a>(29.362 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA14.pdf">pdf/SUGRA14.pdf</a>(24.191 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA15.pdf">pdf/SUGRA15.pdf</a>(52.584 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA16.pdf">pdf/SUGRA16.pdf</a>(23.457 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA17.pdf">pdf/SUGRA17.pdf</a>(23.591 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA18.pdf">pdf/SUGRA18.pdf</a>(23.885 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA19.pdf">pdf/SUGRA19.pdf</a>(29.59 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA2.pdf">pdf/SUGRA2.pdf</a>(22.21 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA20.pdf">pdf/SUGRA20.pdf</a>(24.985 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA21.pdf">pdf/SUGRA21.pdf</a>(32.492 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA22.pdf">pdf/SUGRA22.pdf</a>(36.382 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA23.pdf">pdf/SUGRA23.pdf</a>(63.825 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA24.pdf">pdf/SUGRA24.pdf</a>(26.822 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA25.pdf">pdf/SUGRA25.pdf</a>(24.934 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA26.pdf">pdf/SUGRA26.pdf</a>(64.125 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA27.pdf">pdf/SUGRA27.pdf</a>(31.583 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA28.pdf">pdf/SUGRA28.pdf</a>(25.396 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA29.pdf">pdf/SUGRA29.pdf</a>(24.13 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA3.pdf">pdf/SUGRA3.pdf</a>(22.674 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA30.pdf">pdf/SUGRA30.pdf</a>(24.576 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA31.pdf">pdf/SUGRA31.pdf</a>(29.474 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA32.pdf">pdf/SUGRA32.pdf</a>(58.906 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA33.pdf">pdf/SUGRA33.pdf</a>(52.538 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA34.pdf">pdf/SUGRA34.pdf</a>(42.715 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA35.pdf">pdf/SUGRA35.pdf</a>(49.539 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA36.pdf">pdf/SUGRA36.pdf</a>(67.829 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA37.pdf">pdf/SUGRA37.pdf</a>(34.778 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA38.pdf">pdf/SUGRA38.pdf</a>(46.592 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA39.pdf">pdf/SUGRA39.pdf</a>(43.022 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA4.pdf">pdf/SUGRA4.pdf</a>(22.275 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA40.pdf">pdf/SUGRA40.pdf</a>(34.929 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA41.pdf">pdf/SUGRA41.pdf</a>(26.764 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA42.pdf">pdf/SUGRA42.pdf</a>(46.167 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA43.pdf">pdf/SUGRA43.pdf</a>(60.365 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA44.pdf">pdf/SUGRA44.pdf</a>(46.263 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA45.pdf">pdf/SUGRA45.pdf</a>(98.548 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA46.pdf">pdf/SUGRA46.pdf</a>(49.598 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA47.pdf">pdf/SUGRA47.pdf</a>(110.203 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA48.pdf">pdf/SUGRA48.pdf</a>(36.505 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA49.pdf">pdf/SUGRA49.pdf</a>(46.763 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA5.pdf">pdf/SUGRA5.pdf</a>(23.01 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA50.pdf">pdf/SUGRA50.pdf</a>(57.849 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA6.pdf">pdf/SUGRA6.pdf</a>(23.698 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA7.pdf">pdf/SUGRA7.pdf</a>(23.62 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA8.pdf">pdf/SUGRA8.pdf</a>(23.264 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/pdf/SUGRA9.pdf">pdf/SUGRA9.pdf</a>(24.165 KB)</li><li><a class="anc-file-name" href="/src/0905.2326v2/anc/rawData/Neq8FourLoops.m">rawData/Neq8FourLoops.m</a>(2.817 MB)</li></ul>
+</div>""",
+    ),
+}
+
+
 class ReplayArxivResult:
     def __init__(self, raw: dict) -> None:
         self.entry_id = raw["entry_id"]
@@ -2153,6 +2226,561 @@ class ArxivProviderTests(unittest.TestCase):
             self.assertFalse(
                 any(path.suffix in {".gz", ".tar"} for path in saved_files)
             )
+
+
+class TestArxivAncillaryAssets(unittest.TestCase):
+    def _responses(self, arxiv_id, *, fixture_id="0811.2625v2", requested_id=None):
+        abstract, details = ARXIV_ANCILLARY_PAGES[fixture_id]
+        abstract = abstract.replace(fixture_id, arxiv_id).replace(
+            fixture_id.rsplit("v", 1)[0], arxiv_id.rsplit("v", 1)[0]
+        )
+        details = details.replace(fixture_id, arxiv_id)
+        abs_url = f"https://arxiv.org/abs/{requested_id or arxiv_id}"
+        details_url = f"https://arxiv.org/src/{arxiv_id}/anc"
+        return {
+            ("GET", abs_url): http_response(abs_url, abstract.encode(), "text/html"),
+            ("GET", details_url): http_response(
+                details_url, details.encode(), "text/html"
+            ),
+        }
+
+    def _discover(self, arxiv_id, responses):
+        transport = RecordingTransport(responses)
+        with paper_fetch.RuntimeContext(env={}) as context:
+            fixed_id, result = _arxiv_assets.discover_arxiv_ancillary_assets(
+                transport, arxiv_id, user_agent="test", context=context
+            )
+        return fixed_id, result, transport
+
+    def test_real_complete_lists_and_nested_paths(self):
+        for arxiv_id, count in (
+            ("0811.2625v2", 2),
+            ("2606.00587v2", 1),
+            ("0905.2326v2", 103),
+        ):
+            with self.subTest(arxiv_id=arxiv_id):
+                fixed_id, result, transport = self._discover(
+                    arxiv_id, self._responses(arxiv_id, fixture_id=arxiv_id)
+                )
+                self.assertEqual(fixed_id, arxiv_id)
+                self.assertEqual(result["asset_failures"], [])
+                self.assertEqual(len(result["assets"]), count)
+                self.assertEqual(len(transport.calls), 2)
+                for item in result["assets"]:
+                    self.assertEqual(item["heading"], item["source_path"])
+                    self.assertEqual(
+                        item["url"],
+                        f"https://arxiv.org/src/{arxiv_id}/anc/{item['source_path']}",
+                    )
+                if count == 103:
+                    self.assertEqual(result["assets"][2]["source_path"], "nb/SUGRA1.nb")
+                    self.assertEqual(
+                        result["assets"][-1]["source_path"], "rawData/Neq8FourLoops.m"
+                    )
+                if count == 2:
+                    self.assertEqual(
+                        [Path(a["source_path"]).suffix for a in result["assets"]],
+                        [".nb", ".pdf"],
+                    )
+                if count == 1:
+                    self.assertEqual(
+                        result["assets"][0]["source_path"], "supplementary_material.pdf"
+                    )
+
+    def test_dedupe_and_reject_untrusted_listing_links(self):
+        arxiv_id = "0811.2625v2"
+        responses = self._responses(arxiv_id)
+        url = f"https://arxiv.org/src/{arxiv_id}/anc"
+        invalid = [
+            "/src/0811.2625v3/anc/other.pdf",
+            "/src/0811.9999v2/anc/other.pdf",
+            "/src/0811.2625v2",
+            "https://example.org/src/0811.2625v2/anc/x.pdf",
+            "/src/0811.2625v2/anc/../x.pdf",
+            "/src/0811.2625v2/anc/a/../x.pdf",
+            "/src/0811.2625v2/anc/%2e%2e/x.pdf",
+            "/src/0811.2625v2/anc/%252e%252e/x.pdf",
+            "/src/0811.2625v2/anc/a%5cb.pdf",
+            "/src/0811.2625v2/anc/a%00b.pdf",
+        ]
+        duplicate = "/src/0811.2625v2/anc/solve-sparse-opt-check-small%2Enb#download"
+        extra = "".join(
+            f'<a class="anc-file-name" href="{href}">bad</a>'
+            for href in [*invalid, duplicate]
+        )
+        responses[("GET", url)]["body"] = responses[("GET", url)]["body"].replace(
+            b"</ul>", (extra + "</ul>").encode()
+        )
+        _, result, _ = self._discover(arxiv_id, responses)
+        self.assertEqual(result["asset_failures"], [])
+        self.assertEqual(len(result["assets"]), 2)
+
+    def test_no_ancillary_section_is_empty_but_failed_discovery_is_not(self):
+        arxiv_id = "0811.2625v2"
+        abs_url = f"https://arxiv.org/abs/{arxiv_id}"
+        details_url = f"https://arxiv.org/src/{arxiv_id}/anc"
+        for failure in (
+            "abs_http",
+            "abs_identity",
+            "abs_redirect",
+            "details_http",
+            "details_identity",
+            "details_incomplete",
+            "missing_entry",
+            None,
+        ):
+            with self.subTest(failure=failure):
+                responses = self._responses(arxiv_id)
+                if failure == "abs_http":
+                    responses[("GET", abs_url)]["status"] = 503
+                elif failure == "abs_identity":
+                    responses[("GET", abs_url)]["body"] = b"<html>Blocked</html>"
+                elif failure == "abs_redirect":
+                    responses[("GET", abs_url)]["url"] = abs_url.replace("v2", "v3")
+                elif failure == "details_http":
+                    responses[("GET", details_url)]["status"] = 403
+                elif failure == "details_identity":
+                    responses[("GET", details_url)]["body"] = responses[
+                        ("GET", details_url)
+                    ]["body"].replace(b"/abs/0811.2625v2", b"/abs/0811.2625v3")
+                elif failure == "details_incomplete":
+                    responses[("GET", details_url)]["body"] = responses[
+                        ("GET", details_url)
+                    ]["body"].replace(b"There are 2", b"There are 3")
+                elif failure == "missing_entry":
+                    responses[("GET", abs_url)]["body"] = responses[("GET", abs_url)][
+                        "body"
+                    ].replace(b'/anc"', b'/other"')
+                else:
+                    soup = _arxiv_html.BeautifulSoup(
+                        responses[("GET", abs_url)]["body"], "html.parser"
+                    )
+                    soup.select_one(".ancillary").decompose()
+                    responses[("GET", abs_url)]["body"] = str(soup).encode()
+                _, result, transport = self._discover(arxiv_id, responses)
+                self.assertEqual(result["assets"], [])
+                if failure:
+                    self.assertEqual(
+                        result["asset_failures"][0]["reason"],
+                        "arxiv_ancillary_discovery_failed",
+                    )
+                else:
+                    self.assertEqual(result["asset_failures"], [])
+                    self.assertEqual(len(transport.calls), 1)
+
+    def test_unversioned_request_pins_body_and_enrichment_preserves_version(self):
+        arxiv_id = "2605.06663v1"
+        unversioned = arxiv_id.rsplit("v", 1)[0]
+        for requested in (arxiv_id, unversioned):
+            with (
+                self.subTest(requested=requested),
+                tempfile.TemporaryDirectory() as tmpdir,
+            ):
+                responses = self._responses(arxiv_id, requested_id=requested)
+                latest_api = _atom_feed_from_fixture(arxiv_id).replace(
+                    arxiv_id.encode(), f"{unversioned}v9".encode()
+                )
+                transport = _html_transport(
+                    arxiv_id, api_body=latest_api, extra_responses=responses
+                )
+                client = ArxivClient(transport, {})
+                with paper_fetch.RuntimeContext(
+                    env={}, download_dir=Path(tmpdir), asset_profile="all"
+                ) as context:
+                    raw = client.fetch_raw_fulltext(
+                        _doi(requested), {"arxiv_id": requested}, context=context
+                    )
+                self.assertEqual(raw.content.merged_metadata["arxiv_id"], arxiv_id)
+                self.assertEqual(
+                    raw.content.merged_metadata["pdf_url"],
+                    canonical_arxiv_pdf_url(arxiv_id),
+                )
+                self.assertEqual(
+                    raw.content.merged_metadata["html_url"],
+                    canonical_arxiv_html_url(arxiv_id),
+                )
+                self.assertEqual(
+                    transport.calls[2]["url"], canonical_arxiv_html_url(arxiv_id)
+                )
+                self.assertEqual(transport.calls[-1]["query"]["id_list"], arxiv_id)
+
+    def test_explicit_version_rejects_latest_abstract(self):
+        responses = self._responses("0811.2625v3", requested_id="0811.2625v2")
+        fixed, result, transport = self._discover("0811.2625v2", responses)
+        self.assertEqual(fixed, "0811.2625v2")
+        self.assertEqual(len(result["asset_failures"]), 1)
+        self.assertEqual(len(transport.calls), 1)
+
+    def test_no_extra_requests_without_all_and_asset_output(self):
+        arxiv_id = "2605.06663v1"
+        for profile, mode, output in (
+            ("none", "all", True),
+            ("body", "all", True),
+            ("all", "none", True),
+            ("all", "all", False),
+        ):
+            with (
+                self.subTest(profile=profile, mode=mode, output=output),
+                tempfile.TemporaryDirectory() as tmpdir,
+            ):
+                transport = _html_transport(arxiv_id)
+                client = ArxivClient(transport, {})
+                with paper_fetch.RuntimeContext(
+                    env={},
+                    download_dir=Path(tmpdir) if output else None,
+                    artifact_mode=mode,
+                    asset_profile=profile,
+                ) as context:
+                    client.fetch_raw_fulltext(
+                        _doi(arxiv_id), _metadata(arxiv_id), context=context
+                    )
+                self.assertEqual(
+                    [call["url"] for call in transport.calls],
+                    [canonical_arxiv_html_url(arxiv_id), _arxiv_atom.ARXIV_API_URL],
+                )
+
+    def test_html_downloads_notebooks_pdf_and_same_basename_paths(self):
+        arxiv_id = "2605.06663v1"
+        responses = self._responses(arxiv_id)
+        details_url = f"https://arxiv.org/src/{arxiv_id}/anc"
+        body = responses[("GET", details_url)]["body"]
+        # Two nested .m paths exercise the existing flattened filename collision handling.
+        body = body.replace(b"There are 2", b"There are 4").replace(
+            b"</ul>",
+            (
+                f'<li><a class="anc-file-name" href="{details_url}/a/code.m">a/code.m</a></li><li><a class="anc-file-name" href="{details_url}/b/code.m">b/code.m</a></li></ul>'
+            ).encode(),
+        )
+        responses[("GET", details_url)]["body"] = body
+        contents = {
+            "solve-sparse-opt-check-small.nb": b"Notebook[{Cell[1]}]",
+            "solve-sparse-opt-check-small.pdf": b"%PDF-1.4\n%%EOF",
+            "a/code.m": b"x=1;",
+            "b/code.m": b"x=2;",
+        }
+        for path, content in contents.items():
+            url = f"{details_url}/{path}"
+            responses[("GET", url)] = http_response(
+                url,
+                content,
+                "application/pdf" if path.endswith(".pdf") else "text/plain",
+            )
+        transport = _html_transport(arxiv_id, extra_responses=responses)
+        client = ArxivClient(transport, {})
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch(
+                "paper_fetch.providers.arxiv.download_arxiv_html_figure_assets",
+                return_value={"assets": [], "asset_failures": []},
+            ),
+        ):
+            result = client.fetch_result(
+                _doi(arxiv_id), _metadata(arxiv_id), Path(tmpdir), asset_profile="all"
+            )
+            self.assertEqual(result.artifacts.asset_failures, [])
+            self.assertEqual(len(result.article.assets), 4)
+            self.assertEqual(len(result.artifacts.assets), 4)
+            self.assertEqual(len({a.path for a in result.article.assets}), 4)
+            markdown = result.article.to_ai_markdown(
+                asset_profile="all", max_tokens="full_text"
+            )
+            self.assertIn("## Supplementary Materials", markdown)
+            for asset in result.article.assets:
+                self.assertEqual(
+                    Path(asset.path).read_bytes(), contents[asset.source_path]
+                )
+                self.assertEqual(asset.heading, asset.source_path)
+                self.assertEqual(markdown.count(f"]({asset.path})"), 1)
+                self.assertEqual(
+                    Path(asset.path).parent, Path(tmpdir) / f"{arxiv_id}_assets"
+                )
+        self.assertEqual(
+            sum(
+                c["url"] == canonical_arxiv_html_url(arxiv_id) for c in transport.calls
+            ),
+            1,
+        )
+
+    def test_pdf_figures_and_attachments_are_registered_once_and_keep_fallback(self):
+        from paper_fetch.workflow.acceptance import evaluate_fetch_acceptance
+
+        arxiv_id = "1406.2661v1"
+        for scenario in (
+            "figure",
+            "attachment_only",
+            "download_failure",
+            "discovery_failure",
+        ):
+            with (
+                self.subTest(scenario=scenario),
+                tempfile.TemporaryDirectory() as tmpdir,
+            ):
+                transport = _html_404_then_pdf_transport(arxiv_id)
+                transport.responses.update(
+                    self._responses(arxiv_id, fixture_id="2606.00587v2")
+                )
+                url = f"https://arxiv.org/src/{arxiv_id}/anc/supplementary_material.pdf"
+                transport.responses[("GET", url)] = http_response(
+                    url, _fixture_pdf(arxiv_id), "application/pdf"
+                )
+                if scenario == "download_failure":
+                    transport.responses[("GET", url)] = http_response(
+                        url, b"Access denied", "text/html"
+                    )
+                if scenario == "discovery_failure":
+                    transport.responses[("GET", f"https://arxiv.org/abs/{arxiv_id}")][
+                        "status"
+                    ] = 503
+                client = ArxivClient(transport, {})
+                client.api_enrichment_enabled = False
+                original_pdf = client._fetch_pdf_payload
+                image = Path(tmpdir) / "body.png"
+                image.write_bytes(PNG_1X1)
+
+                def pdf_with_assets(
+                    *args,
+                    _fetch_pdf=original_pdf,
+                    _image=image,
+                    _scenario=scenario,
+                    **kwargs,
+                ):
+                    payload = _fetch_pdf(*args, **kwargs)
+                    payload.content = replace(
+                        payload.content,
+                        extracted_assets=[
+                            {
+                                "kind": "figure",
+                                "heading": "Figure 1",
+                                "path": str(_image),
+                                "section": "body",
+                            }
+                        ]
+                        if _scenario == "figure"
+                        else [],
+                    )
+                    return payload
+
+                with mock.patch.object(
+                    client, "_fetch_pdf_payload", side_effect=pdf_with_assets
+                ):
+                    result = client.fetch_result(
+                        _doi(arxiv_id),
+                        _metadata(arxiv_id),
+                        Path(tmpdir),
+                        asset_profile="all",
+                    )
+                kinds = (
+                    ["figure", "supplementary"]
+                    if scenario == "figure"
+                    else ["supplementary"]
+                    if scenario == "attachment_only"
+                    else []
+                )
+                self.assertEqual([a.kind for a in result.article.assets], kinds)
+                self.assertEqual(len(result.artifacts.assets), len(kinds))
+                self.assertEqual(result.artifacts.text_only, not kinds)
+                self.assertEqual(
+                    len(result.artifacts.asset_failures), int("failure" in scenario)
+                )
+                self.assertIn(
+                    "fulltext:arxiv_html_fail", result.article.quality.source_trail
+                )
+                self.assertIn(
+                    "fulltext:arxiv_pdf_fallback_ok",
+                    result.article.quality.source_trail,
+                )
+                envelope = paper_fetch.build_fetch_envelope(
+                    result.article,
+                    modes={"article", "markdown"},
+                    render=paper_fetch.RenderOptions(
+                        asset_profile="all", max_tokens="full_text"
+                    ),
+                )
+                acceptance = evaluate_fetch_acceptance(envelope, asset_profile="all")
+                self.assertEqual(acceptance.overall.value, "degraded")
+                self.assertIn(
+                    "fulltext:arxiv_html:fail", acceptance.provenance.fallback_codes
+                )
+                self.assertEqual(
+                    envelope.markdown.count("## Supplementary Materials"),
+                    int(bool(kinds)),
+                )
+                self.assertEqual(
+                    sum(
+                        c["url"] == canonical_arxiv_pdf_url(arxiv_id)
+                        for c in transport.calls
+                    ),
+                    1,
+                )
+                self.assertEqual(
+                    sum(
+                        c["url"] == canonical_arxiv_html_url(arxiv_id)
+                        for c in transport.calls
+                    ),
+                    1,
+                )
+
+    def test_service_acceptance_and_asset_failures_preserve_successful_body(self):
+        from paper_fetch.workflow.acceptance import evaluate_fetch_acceptance
+
+        arxiv_id = "2605.06663v1"
+        for failure in (None, "discovery", "download"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmpdir:
+                responses = self._responses(arxiv_id, fixture_id="2606.00587v2")
+                url = f"https://arxiv.org/src/{arxiv_id}/anc/supplementary_material.pdf"
+                responses[("GET", url)] = http_response(
+                    url, _fixture_pdf("1406.2661v1"), "application/pdf"
+                )
+                if failure == "discovery":
+                    responses[("GET", f"https://arxiv.org/abs/{arxiv_id}")][
+                        "status"
+                    ] = 503
+                if failure == "download":
+                    responses[("GET", url)] = http_response(
+                        url, b"Access denied", "text/html"
+                    )
+                transport = _html_transport(arxiv_id, extra_responses=responses)
+                # The established body fixture has figures; this test isolates supplementary
+                # service assembly. Body image downloading has separate replay coverage.
+                soup = _arxiv_html.BeautifulSoup(_fixture_html(arxiv_id), "html.parser")
+                for node in soup.select("figure, img"):
+                    node.decompose()
+                transport.responses[("GET", canonical_arxiv_html_url(arxiv_id))][
+                    "body"
+                ] = str(soup).encode()
+                client = ArxivClient(
+                    transport,
+                    {},
+                    api_client=ReplayArxivApiClient({arxiv_id: _api_payload(arxiv_id)}),
+                )
+                with (
+                    paper_fetch.RuntimeContext(
+                        env={},
+                        clients={"arxiv": client},
+                        download_dir=Path(tmpdir),
+                    ) as context,
+                    mock.patch(
+                        "paper_fetch.providers.arxiv.download_arxiv_html_figure_assets",
+                        return_value={"assets": [], "asset_failures": []},
+                    ),
+                ):
+                    envelope = paper_fetch.fetch_paper(
+                        arxiv_id,
+                        modes={"article", "markdown"},
+                        strategy=paper_fetch.FetchStrategy(
+                            preferred_providers=["arxiv"],
+                            asset_profile="all",
+                            require_local_body_assets=True,
+                        ),
+                        context=context,
+                    )
+                    acceptance = evaluate_fetch_acceptance(
+                        envelope,
+                        asset_profile="all",
+                        expected_doi=_doi(arxiv_id),
+                        require_local_body_assets=True,
+                    )
+                self.assertTrue(envelope.has_fulltext)
+                self.assertTrue(envelope.markdown)
+                self.assertEqual(
+                    sum(
+                        c["url"] == canonical_arxiv_html_url(arxiv_id)
+                        for c in transport.calls
+                    ),
+                    1,
+                )
+                self.assertFalse(any("/pdf/" in c["url"] for c in transport.calls))
+                if failure:
+                    self.assertEqual(acceptance.overall.value, "degraded")
+                    self.assertEqual(len(envelope.article.quality.asset_failures), 1)
+                else:
+                    self.assertEqual(acceptance.overall.value, "complete")
+                    self.assertEqual(acceptance.asset.local, 1)
+                    self.assertEqual(len(envelope.article.assets), 1)
+                    self.assertEqual(
+                        envelope.markdown.count("## Supplementary Materials"), 1
+                    )
+
+    def test_attachments_obey_shared_bytes_and_file_budgets(self):
+        from paper_fetch.asset_budget import AssetBudget
+        from paper_fetch.http import HttpTransport
+        from tests.unit.test_asset_budget import _FakeStreamResponse
+
+        arxiv_id = "2605.06663v1"
+        for budget, code in (
+            (AssetBudget(max_bytes_per_asset=8), "asset_bytes_per_asset_exceeded"),
+            (AssetBudget(max_bytes_total=20), "asset_bytes_total_exceeded"),
+            (AssetBudget(max_files=0), "asset_file_limit_exceeded"),
+        ):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmpdir:
+                # Simulate bytes already retained for the body in the same budget.
+                if code == "asset_bytes_total_exceeded":
+                    reservation = budget.reserve()
+                    reservation.consume(10)
+                    reservation.commit()
+                responses = self._responses(arxiv_id, fixture_id="2606.00587v2")
+                url = f"https://arxiv.org/src/{arxiv_id}/anc/supplementary_material.pdf"
+                responses[("GET", url)] = http_response(
+                    url, b"%PDF-1.4\n%%EOF", "application/pdf"
+                )
+                transport = _html_transport(arxiv_id, extra_responses=responses)
+                client = ArxivClient(transport, {})
+                streaming = HttpTransport()
+                response = _FakeStreamResponse(
+                    b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+                )
+                response._paper_fetch_final_url = url
+                with (
+                    paper_fetch.RuntimeContext(
+                        env={}, download_dir=Path(tmpdir), asset_budget=budget
+                    ) as context,
+                    mock.patch(
+                        "paper_fetch.providers.arxiv.download_arxiv_html_figure_assets",
+                        return_value={"assets": [], "asset_failures": []},
+                    ),
+                    mock.patch.object(
+                        streaming, "_perform_request", return_value=response
+                    ),
+                    mock.patch.object(transport, "_streaming_ready", True, create=True),
+                    mock.patch.object(
+                        transport,
+                        "stream_to_file",
+                        side_effect=streaming.stream_to_file,
+                    ),
+                ):
+                    result = client.fetch_result(
+                        _doi(arxiv_id),
+                        _metadata(arxiv_id),
+                        Path(tmpdir),
+                        asset_profile="all",
+                        context=context,
+                    )
+                self.assertEqual(result.article.quality.content_kind, "fulltext")
+                self.assertEqual(result.artifacts.assets, [])
+                self.assertEqual(result.artifacts.asset_failures[0]["reason"], code)
+                self.assertFalse(list(Path(tmpdir).rglob("*.part")))
+                self.assertEqual(
+                    sum(
+                        c["url"] == canonical_arxiv_html_url(arxiv_id)
+                        for c in transport.calls
+                    ),
+                    1,
+                )
+
+    def test_discovery_transport_failure_preserves_fixed_version(self):
+        from paper_fetch.http import RequestFailure
+
+        responses = self._responses("0811.2625v2", requested_id="0811.2625")
+        url = "https://arxiv.org/src/0811.2625v2/anc"
+        responses[("GET", url)] = RequestFailure(
+            None, "Timed out", url=url, error_category="timeout"
+        )
+        fixed_id, result, _ = self._discover("0811.2625", responses)
+        self.assertEqual(fixed_id, "0811.2625v2")
+        self.assertEqual(result["asset_failures"][0]["source_url"], url)
+        self.assertEqual(
+            result["asset_failures"][0]["reason"], "arxiv_ancillary_discovery_failed"
+        )
 
 
 if __name__ == "__main__":

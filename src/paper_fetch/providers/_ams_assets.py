@@ -396,6 +396,38 @@ def _extract_ams_formula_assets(
     return extract_formula_assets(html_text, source_url, noise_profile="ams")
 
 
+def _is_ams_article_supplement(url: str, source_url: str) -> bool:
+    parsed = urllib.parse.urlparse(urllib.parse.urljoin(source_url, url))
+    source = urllib.parse.urlparse(source_url)
+    article_path = source.path.removeprefix("/view/").strip("/")
+    path = re.sub(r"/+", "/", parsed.path)
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname == source.hostname == "journals.ametsoc.org"
+        and article_path.endswith(".xml")
+        and path.startswith(f"/supplemental/{article_path}/")
+        and bool(path.rsplit("/", 1)[-1])
+    )
+
+
+def _extract_ams_supplementary_assets(
+    html_text: str, source_url: str
+) -> list[dict[str, str]]:
+    from ..extraction.html.assets import extract_supplementary_assets
+    from .atypon_browser_workflow.asset_scopes import (
+        _atypon_browser_workflow_supplementary_asset_is_supported,
+    )
+
+    assets: dict[str, dict[str, str]] = {}
+    for asset in extract_supplementary_assets(html_text, source_url):
+        url = asset["url"]
+        if _is_ams_article_supplement(url, source_url) or (
+            _atypon_browser_workflow_supplementary_asset_is_supported(asset)
+        ):
+            assets.setdefault(url, asset)
+    return list(assets.values())
+
+
 def extract_asset_html_scopes(
     body_container: Any,
     supplementary_container: Any,
@@ -415,6 +447,11 @@ def extract_asset_html_scopes(
             supplementary_container
         )
         if normalize_text(node.get_text(" ", strip=True))
+    )
+    supplementary_html += "\n" + "\n".join(
+        str(anchor)
+        for anchor in supplementary_container.find_all("a", href=True)
+        if _is_ams_article_supplement(str(anchor["href"]), source_url)
     )
     if raw_body_container is not None:
         _append_ams_download_figure_source_sidecar(
@@ -438,7 +475,6 @@ def scoped_asset_extractor(
         HtmlAssetExtractionPolicy,
         extract_scoped_assets_with_policy,
     )
-    from .atypon_browser_workflow.asset_scopes import extract_supplementary_assets
 
     download_figure_sources = _extract_ams_download_figure_sources(
         body_html_text,
@@ -458,7 +494,7 @@ def scoped_asset_extractor(
         ),
         policy=HtmlAssetExtractionPolicy(
             formula_extractor=_extract_ams_formula_assets,
-            supplementary_extractor=extract_supplementary_assets,
+            supplementary_extractor=_extract_ams_supplementary_assets,
         ),
     )
     table_assets = _extract_ams_table_assets(normalized_body_html, source_url)

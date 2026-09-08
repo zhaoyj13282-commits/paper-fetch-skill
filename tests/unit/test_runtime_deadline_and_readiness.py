@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
+from paper_fetch.providers import _playwright_browser
+from paper_fetch.providers.aip import AIP_BROWSER_PROFILE
+from paper_fetch.providers.browser_runtime.types import BrowserHtmlReadiness
 from paper_fetch.providers.browser_workflow.fetchers import readiness
 from paper_fetch import runtime as runtime_module
 from paper_fetch.runtime import RuntimeContext
@@ -148,3 +153,52 @@ def test_wiley_body_readiness_requires_two_identical_ready_fingerprints(
     assert result.fingerprint == "stable-body"
     assert payloads == []
     assert clock[0] == 0.75
+
+
+@pytest.mark.parametrize(
+    ("body_at", "request_budget", "expected_ready", "expected_elapsed"),
+    [
+        (57.0, 120.0, True, 57.75),
+        (100.0, 120.0, False, 90.0),
+        (57.0, 30.0, False, 30.0),
+    ],
+)
+def test_aip_readiness_waits_for_slow_body_within_remaining_budget(
+    monkeypatch, body_at, request_budget, expected_ready, expected_elapsed
+) -> None:
+    clock = [10.0]
+
+    class Page:
+        def evaluate(self, _script, _arguments):
+            ready = clock[0] - 10.0 >= body_at
+            return {
+                "ready": ready,
+                "selector": ".widget-ArticleFulltext" if ready else None,
+                "textLength": 4200 if ready else 0,
+                "paragraphCount": 4 if ready else 0,
+                "headingCount": 1 if ready else 0,
+                "fingerprint": "stable-body" if ready else "",
+            }
+
+        def wait_for_timeout(self, milliseconds):
+            clock[0] += milliseconds / 1000.0
+
+    monkeypatch.setattr(readiness.time, "monotonic", lambda: clock[0])
+    trace = {}
+    result = _playwright_browser._wait_for_browser_html_readiness(
+        Page(),
+        publisher="aip",
+        readiness=BrowserHtmlReadiness(wait_for_article_body=True),
+        wait_seconds=8,
+        timeout_ms=int((request_budget + 10.0) * 1000),
+        request_started=0.0,
+        return_image_payload=False,
+        runtime_context=None,
+        candidate_trace=trace,
+        readiness_timeout_seconds=AIP_BROWSER_PROFILE.html_readiness_budget_seconds,
+    )
+
+    assert result.ready is expected_ready
+    assert clock[0] - 10.0 == expected_elapsed
+    assert trace["dom_readiness_result"] == ("ready" if expected_ready else "timeout")
+    assert trace["dom_readiness_seconds"] == expected_elapsed

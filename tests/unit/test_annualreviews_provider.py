@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+
+import pytest
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -535,3 +537,144 @@ def test_download_related_assets_fetches_annualreviews_body_figure() -> None:
     assert result["assets"][0]["downloaded_bytes"] == len(image_body)
     assert saved_exists
     assert saved_bytes == image_body
+
+
+def test_supplementary_fixture_discovers_five_official_files_and_filters_scope():
+    html = golden_criteria_asset(SUPPLEMENTARY_DOI, "original.html").read_text()
+    source_url = _fixture_source_url(SUPPLEMENTARY_DOI)
+    soup = BeautifulSoup(html, "lxml")
+    section = soup.select_one("#supplementary_data")
+    original = section.select_one("a[href]")
+    import copy
+
+    section.append(copy.copy(original))
+    for href in (
+        original["href"].replace(SUPPLEMENTARY_DOI, "10.1146/wrong-doi"),
+        "https://evil.test" + original["href"],
+        original["href"].replace(".pdf?", ".ppt?"),
+        "/content/journals/multimedia/" + SUPPLEMENTARY_DOI,
+    ):
+        link = copy.copy(original)
+        link["href"] = href
+        section.append(link)
+    outside = copy.copy(original)
+    outside["href"] = outside["href"].replace("supmat.pdf", "outside.pdf")
+    soup.body.append(outside)
+    assets = _annualreviews_html.extract_scoped_html_assets(
+        str(soup), source_url, asset_profile="all"
+    )
+    supplements = [a for a in assets if a["kind"] == "supplementary"]
+    assert len(supplements) == 5
+    assert len({a["url"] for a in supplements}) == 5
+    assert sum(".pdf?" in a["url"] for a in supplements) == 1
+    assert sum(".mpg?" in a["url"] for a in supplements) == 4
+    assert supplements[1]["heading"] == "Supplemental Video 1"
+    assert "subthreshold" in supplements[1]["caption"]
+    for profile in ("body", "none"):
+        assert not [
+            a
+            for a in _annualreviews_html.extract_scoped_html_assets(
+                str(soup), source_url, asset_profile=profile
+            )
+            if a["kind"] == "supplementary"
+        ]
+
+
+@pytest.mark.parametrize("failed_index", [None, 2])
+def test_supplementary_files_download_and_render_with_partial_failures(
+    tmp_path, failed_index
+):
+    html = golden_criteria_asset(SUPPLEMENTARY_DOI, "original.html").read_text()
+    source_url = _fixture_source_url(SUPPLEMENTARY_DOI)
+    # Keep the real supplementary region; body image downloading has separate coverage.
+    soup = BeautifulSoup(html, "lxml")
+    for image in soup.select("img"):
+        image.decompose()
+    html = str(soup)
+    assets = _annualreviews_html.extract_scoped_html_assets(
+        html, source_url, asset_profile="all"
+    )
+    supplements = [a for a in assets if a["kind"] == "supplementary"]
+    assert len(supplements) == 5
+    responses = {}
+    for index, asset in enumerate(supplements):
+        url = asset["url"]
+        responses[("GET", url)] = (
+            RequestFailure(404, "Missing supplement", url=url)
+            if index == failed_index
+            else {
+                "status_code": 200,
+                "headers": {
+                    "content-type": "application/pdf" if index == 0 else "video/mpeg"
+                },
+                "body": b"%PDF-1.7 supplemental PDF"
+                if index == 0
+                else b"\x00\x00\x01\xba" + b"video" * 30,
+                "url": url,
+            }
+        )
+    transport = AssetTransport(responses)
+    client = AnnualreviewsClient(transport=transport, env={})
+    install_browser_workflow_deps(
+        client,
+        load_runtime_config=mock.Mock(
+            return_value=_runtime_config(str(tmp_path), SUPPLEMENTARY_DOI)
+        ),
+        ensure_runtime_ready=mock.Mock(),
+        _build_shared_browser_image_fetcher=mock.Mock(return_value=None),
+        _build_shared_browser_file_fetcher=mock.Mock(return_value=None),
+    )
+    markdown, _ = client.extract_markdown(
+        html, source_url, metadata={"doi": SUPPLEMENTARY_DOI}
+    )
+    raw = _typed_raw_payload(
+        provider="annualreviews",
+        source_url=source_url,
+        content_type="text/html",
+        body=html.encode(),
+        route="html",
+        markdown_text=markdown,
+        browser_context_seed={},
+    )
+    result = client.download_related_assets(
+        SUPPLEMENTARY_DOI,
+        {"doi": SUPPLEMENTARY_DOI},
+        raw,
+        tmp_path,
+        asset_profile="all",
+    )
+    assert len(result["assets"]) == (5 if failed_index is None else 4)
+    assert len(result["asset_failures"]) == int(failed_index is not None)
+    if failed_index is not None:
+        assert (
+            result["asset_failures"][0]["source_url"]
+            == supplements[failed_index]["url"]
+        )
+    article = client.to_article_model(
+        {"doi": SUPPLEMENTARY_DOI},
+        raw,
+        downloaded_assets=result["assets"],
+        asset_failures=result["asset_failures"],
+    )
+    rendered = article.to_ai_markdown(asset_profile="all", max_tokens="full_text")
+    for downloaded in result["assets"]:
+        path = Path(downloaded["path"])
+        assert path.read_bytes() == responses[("GET", downloaded["source_url"])]["body"]
+        matching = [
+            a
+            for a in article.assets
+            if a.kind == "supplementary" and a.path == str(path)
+        ]
+        assert len(matching) == 1
+        assert str(path) in rendered
+    transport.calls.clear()
+    for profile in ("body", "none"):
+        scoped = client.download_related_assets(
+            SUPPLEMENTARY_DOI,
+            {"doi": SUPPLEMENTARY_DOI},
+            raw,
+            tmp_path,
+            asset_profile=profile,
+        )
+        assert not scoped["assets"]
+    assert not transport.calls

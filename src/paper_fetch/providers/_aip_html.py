@@ -7,6 +7,7 @@ from functools import partial
 import re
 from typing import Any
 from collections.abc import Mapping
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -502,6 +503,16 @@ def scoped_asset_extractor(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
     assets: list[dict[str, Any]] = []
     for raw_asset in extracted:
         asset: dict[str, Any] = dict(raw_asset)
+        parsed = urlparse(str(asset.get("url") or ""))
+        if (
+            asset.get("kind") == "supplementary"
+            and parsed.hostname == "pubs.aip.org"
+            and re.search(r"/article-supplement/.+/zip/", parsed.path)
+        ):
+            filename = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+            asset["filename_hint"] = (
+                filename if filename.lower().endswith(".zip") else f"{filename}.zip"
+            )
         if normalize_text(
             str(asset.get("kind") or "")
         ).lower() == "figure" and not normalize_text(

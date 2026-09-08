@@ -151,7 +151,11 @@ def metadata_from_arxiv_result(
                     details={"identity": identity.to_dict()}
                 ),
             )
-    arxiv_id = observed_arxiv_id or normalized_requested_id
+    arxiv_id = (
+        normalized_requested_id
+        if re.search(r"v\d+$", normalized_requested_id)
+        else observed_arxiv_id or normalized_requested_id
+    )
     if not arxiv_id:
         raise ProviderFailure(
             NO_RESULT, "arXiv API result did not include a usable arXiv ID."
@@ -159,6 +163,8 @@ def metadata_from_arxiv_result(
     pdf_url = normalize_text(getattr(result, "pdf_url", "")) or canonical_arxiv_pdf_url(
         arxiv_id
     )
+    if arxiv_id != observed_arxiv_id:
+        pdf_url = canonical_arxiv_pdf_url(arxiv_id)
     categories = [
         normalize_text(item)
         for item in list(getattr(result, "categories", []) or [])

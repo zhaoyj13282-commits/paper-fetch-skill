@@ -544,6 +544,7 @@ class BrowserWorkflowClient(ProviderClient):
             )
         else:
             plan_profile = {
+                "client": self,
                 "assets": [dict(asset) for asset in assets],
                 "asset_profile": asset_profile,
             }

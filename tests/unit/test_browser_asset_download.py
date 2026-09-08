@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+
+import pytest
 from pathlib import Path
 import threading
 import tempfile
@@ -15,6 +17,7 @@ from paper_fetch.extraction.html.assets import (
     download_assets,
 )
 from paper_fetch.http import RequestCancelledError, RequestFailure
+from paper_fetch.providers.browser_runtime import BrowserRuntimeConfig
 from paper_fetch.runtime import RuntimeContext
 from paper_fetch.providers.browser_workflow import assets as browser_workflow_assets
 from paper_fetch.providers.browser_workflow.fetchers import (
@@ -1145,7 +1148,13 @@ class BrowserWorkflowAssetDownloadTests(TestCase):
             candidate_builder=direct_first_candidates,
         )
         recovery = BrowserAssetRecoveryContext(
-            runtime=SimpleNamespace(backend="camoufox", headless=True),
+            runtime=BrowserRuntimeConfig(
+                provider="acs",
+                doi=plan.article_id,
+                artifact_dir=plan.output_dir,
+                headless=True,
+                user_agent="test-agent",
+            ),
             provider="acs",
             user_agent="test-agent",
             browser_context_seed={},
@@ -1660,3 +1669,137 @@ def test_asset_progress_counts_identity_once_across_candidates_and_resets_scope(
     assert assets[0]["scope"] == assets[1]["scope"]
     assert assets[0]["scope"] != assets[2]["scope"]
     assert transport.request.call_count == 3
+
+
+@pytest.mark.parametrize("provider", ["royalsocietypublishing", "acs", "annualreviews"])
+@pytest.mark.parametrize("discovery", ["original", "empty", "failure"])
+def test_silverchair_later_figure_discovery_precedes_parallel_http(
+    tmp_path, provider, discovery
+):
+    from paper_fetch.providers.acs import AcsClient
+    from paper_fetch.providers.annualreviews import AnnualreviewsClient
+    from paper_fetch.providers.royalsocietypublishing import (
+        RoyalsocietypublishingClient,
+    )
+    from paper_fetch.providers.browser_runtime import BrowserRuntimeFailure
+    from tests.unit._atypon_browser_workflow_provider_support import (
+        AssetTransport,
+        _typed_raw_payload,
+    )
+    from tests.unit._browser_workflow_deps import install_browser_workflow_deps
+
+    owner = threading.get_ident()
+    browser_threads = []
+    page_url = "https://example.test/view-large/figure/2"
+    original_url = "https://example.test/figure2.jpg"
+    preview_url = "https://example.test/preview2.jpg"
+    direct_url = "https://example.test/figure1.jpg"
+    assets = [
+        {
+            "kind": "figure",
+            "heading": "Figure 1",
+            "url": direct_url,
+            "full_size_url": direct_url,
+            "figure_page_url": "https://example.test/view-large/figure/1",
+            "section": "body",
+        },
+        {
+            "kind": "figure",
+            "heading": "Figure 2",
+            "url": preview_url,
+            "preview_url": preview_url,
+            "figure_page_url": page_url,
+            "section": "body",
+        },
+        {
+            "kind": "figure",
+            "heading": "Figure 3",
+            "url": preview_url,
+            "preview_url": preview_url,
+            "figure_page_url": page_url,
+            "section": "body",
+        },
+    ]
+
+    def fetch_page(urls, **kwargs):
+        url = urls[0]
+        browser_threads.append(threading.get_ident())
+        assert url == page_url
+        if discovery == "failure":
+            raise BrowserRuntimeFailure("no_result", "figure unavailable")
+        return SimpleNamespace(
+            html=f'<meta property="og:image" content="{original_url}">'
+            if discovery == "original"
+            else "<html></html>",
+            final_url=url,
+            browser_context_seed={},
+        )
+
+    transport = AssetTransport(
+        {
+            ("GET", url): {
+                "status_code": 200,
+                "headers": {"content-type": "image/png"},
+                "body": png_header(640, 480),
+                "url": url,
+            }
+            for url in (direct_url, original_url, preview_url)
+        }
+    )
+    batches = []
+
+    def record_download(*args, **kwargs):
+        batches.append(
+            (len(kwargs["assets"]), kwargs["options"].asset_download_concurrency)
+        )
+        return download_assets(*args, **kwargs)
+
+    client = {
+        "acs": AcsClient,
+        "annualreviews": AnnualreviewsClient,
+        "royalsocietypublishing": RoyalsocietypublishingClient,
+    }[provider](transport=transport, env={})
+    doi = "10.1098/test"
+    runtime = BrowserRuntimeConfig(
+        provider=provider,
+        doi=doi,
+        artifact_dir=tmp_path,
+        headless=True,
+        user_agent="test",
+    )
+    install_browser_workflow_deps(
+        client,
+        load_runtime_config=mock.Mock(return_value=runtime),
+        ensure_runtime_ready=mock.Mock(),
+        _build_shared_browser_image_fetcher=mock.Mock(return_value=None),
+        fetch_html_with_browser=fetch_page,
+        download_assets=record_download,
+    )
+    raw = _typed_raw_payload(
+        provider=provider,
+        source_url="https://example.test/article",
+        content_type="text/html",
+        body=b"<article>Body</article>",
+        route="html",
+        markdown_text="Body",
+        browser_context_seed={},
+    )
+    with RuntimeContext(env={"PAPER_FETCH_ASSET_DOWNLOAD_CONCURRENCY": "4"}) as context:
+        result = client._download_browser_backed_related_assets(
+            doi,
+            {"doi": doi},
+            raw,
+            tmp_path,
+            asset_profile="body",
+            context=context,
+            assets=assets,
+        )
+    assert browser_threads == [owner]
+    assert (2, 4) in batches
+    assert len(result["assets"]) == 3
+    assert not result["asset_failures"]
+    expected_url = original_url if discovery == "original" else preview_url
+    assert {call["url"] for call in transport.calls} == {direct_url, expected_url}
+    assert all(
+        Path(a["path"]).read_bytes() == png_header(640, 480) for a in result["assets"]
+    )

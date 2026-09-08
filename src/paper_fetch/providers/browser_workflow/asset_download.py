@@ -160,6 +160,8 @@ def retry_failed_browser_assets(
         previous.failures,
         retry_scope="supplementary",
     )
+    if recovery.provider == "wiley":
+        failed_supplementary_assets = []
     if not failed_body_assets and not failed_supplementary_assets:
         return previous
     if recovery.runtime is None:
@@ -645,8 +647,6 @@ def _run_browser_asset_download_attempt(
     )
     figure_page_browser_requires_caller_thread = bool(
         recovery.runtime is not None
-        and normalize_text(str(getattr(recovery.runtime, "backend", ""))).lower()
-        == "camoufox"
         and normalize_text(recovery.provider).lower()
         in _SILVERCHAIR_FIGURE_PAGE_PROVIDERS
     )
@@ -915,6 +915,27 @@ def _run_browser_asset_download_attempt(
                 provider_name=recovery.provider,
                 runtime_context=recovery.runtime_context,
             )
+            if recovery.provider == "wiley":
+                if file_document_fetcher is None:
+                    return {
+                        "assets": [],
+                        "asset_failures": [
+                            {**asset, "reason": "wiley_supplement_page_unavailable"}
+                            for asset in attempt_supplementary_assets
+                        ],
+                    }
+                return deps.download_assets(
+                    SUPPLEMENTARY_KIND,
+                    attempt_settings.get("transport"),
+                    assets=attempt_supplementary_assets,
+                    options=replace(
+                        common_options,
+                        file_document_fetcher=file_document_fetcher,
+                        asset_download_concurrency=1,
+                        fetch_policy="browser_first",
+                    ),
+                    **common_kwargs,
+                )
             if plan.fetch_policy != "direct_then_browser" or not serial_browser_assets:
                 return deps.download_assets(
                     SUPPLEMENTARY_KIND,

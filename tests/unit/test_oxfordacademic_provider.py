@@ -466,3 +466,38 @@ def test_markdown_contract_pdf_fallback_fixture() -> None:
     assert "# Untitled Article" not in markdown
     assert "Google Scholar" not in markdown
     assert "View Article Abstract" not in markdown
+
+
+def test_oxford_supplements_exclude_body_pdf_and_dedupe_before_download() -> None:
+    from bs4 import BeautifulSoup
+
+    extraction = _extract_html_fixture()
+    supplements = [
+        a for a in extraction.extracted_assets if a["kind"] == "supplementary"
+    ]
+    assert len(supplements) == 1
+    soup = BeautifulSoup(
+        golden_criteria_asset(HTML_DOI, "original.html").read_text(), "lxml"
+    )
+    assert supplements[0]["url"] == soup.select_one(".dataSuppLink a")["href"]
+    assert supplements[0]["heading"] == "btaa161_Supplementary_Materials"
+
+
+def test_oxford_attachment_identity_preserves_non_signature_parameters() -> None:
+    url = "https://oup.silverchair-cdn.com/oup/backfile/supp.pdf"
+    html = f"""
+    <article><a href="{url}?part=1&amp;Signature=old">Supplementary figure</a>
+    <a href="javascript:;">Supplementary Data</a>
+    <a href="https://academic.oup.com/article-pdf/1/main.pdf">Download PDF</a>
+    <a href="https://example.org/reference.pdf">Reference</a></article>
+    <div class="dataSuppLink"><a href="{url}?part=1&amp;Signature=new&amp;Expires=123">File 1</a></div>
+    <div class="dataSuppLink"><a href="{url}?part=2&amp;Signature=second">File 2</a></div>
+    """
+    result = _oxfordacademic_html.extract_markdown(
+        html, "https://academic.oup.com/article/1", metadata={}
+    )
+    assets = [a for a in result.extracted_assets if a["kind"] == "supplementary"]
+    assert [a["url"] for a in assets] == [
+        url + "?part=1&Signature=new&Expires=123",
+        url + "?part=2&Signature=second",
+    ]

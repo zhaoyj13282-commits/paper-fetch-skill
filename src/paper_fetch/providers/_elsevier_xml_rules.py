@@ -233,6 +233,8 @@ def infer_elsevier_asset_group_key(value: str) -> str:
     filename = (
         re.split(r"[?#]", normalized, maxsplit=1)[0].rsplit("/", 1)[-1] or normalized
     )
+    if re.fullmatch(r"(?:1-s2\.0-[a-z0-9]+-)?am(?:\.pdf)?", filename):
+        return "am"
     match = _ASSET_GROUP_PATTERN.search(filename)
     if match:
         return match.group(1).lower()

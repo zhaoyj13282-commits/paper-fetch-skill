@@ -158,6 +158,7 @@ AIP_BROWSER_PROFILE = browser_workflow.make_atypon_browser_profile(
     fallback_author_extractor=_aip_html.extract_authors,
     policy=browser_workflow.BrowserWorkflowPolicy(
         fast_html_attempt=False,
+        html_readiness_budget_seconds=90.0,
         persistent_storage_state=False,
     ),
 )

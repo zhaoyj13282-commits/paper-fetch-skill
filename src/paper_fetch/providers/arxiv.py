@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Mapping, Sequence
 import urllib.parse
+import re
 
 from ..arxiv_id import (
     arxiv_id_from_doi,
@@ -20,6 +21,7 @@ from ..config import build_publisher_user_agent, build_user_agent
 from ..failure import FailureDiagnostics
 from ..extraction.html.availability_policy import AvailabilityPolicy
 from ..extraction.html.provider_rules import ProviderHtmlRules
+from ..extraction.html import assets as html_assets
 from ..http import (
     DEFAULT_FULLTEXT_TIMEOUT_SECONDS,
     HttpTransport,
@@ -40,6 +42,8 @@ from ..tracing import download_marker, fulltext_marker, trace_from_markers
 from ..utils import empty_asset_results, normalize_text
 from ._arxiv_assets import (
     ARXIV_IMAGE_ACCEPT,
+    _arxiv_asset_download_concurrency,
+    discover_arxiv_ancillary_assets,
     inline_arxiv_source_assets_in_markdown,
 )
 from ._arxiv_asset_strategy import (
@@ -258,6 +262,11 @@ class ArxivClient(ProviderClient):
             api_metadata=api_metadata,
             references=references,
         )
+        fixed_id = str(derived_metadata.get("arxiv_id") or "")
+        if re.search(r"v\d+$", fixed_id):
+            merged_metadata = _minimal_arxiv_metadata(
+                fixed_id, doi=None, metadata=merged_metadata
+            )
         payload.content = replace(payload.content, merged_metadata=merged_metadata)
         payload.warnings = warnings
         return payload
@@ -406,6 +415,17 @@ class ArxivClient(ProviderClient):
         context = self._runtime_context(context)
         derived_metadata = self._ensure_derived_metadata(doi, metadata)
         arxiv_id = normalize_arxiv_id(str(derived_metadata.get("arxiv_id") or ""))
+        ancillary = None
+        if (
+            context.asset_profile == "all"
+            and context.artifact_store.asset_download_dir is not None
+        ):
+            arxiv_id, ancillary = discover_arxiv_ancillary_assets(
+                self.transport, arxiv_id, user_agent=self.user_agent, context=context
+            )
+            derived_metadata = _minimal_arxiv_metadata(
+                arxiv_id, doi=doi, metadata=derived_metadata
+            )
 
         def run_html(_state: ProviderWaterfallState) -> RawFulltextPayload:
             return self._fetch_html_payload(derived_metadata)
@@ -459,6 +479,14 @@ class ArxivClient(ProviderClient):
             client=self,
             initial_warnings=[],
         )
+        if ancillary is not None:
+            payload.content = replace(
+                payload.content,
+                diagnostics={
+                    **payload.content.diagnostics,
+                    "arxiv_ancillary": ancillary,
+                },
+            )
         if not self.api_enrichment_enabled:
             return payload
         api_metadata, metadata_warnings = self._fetch_api_metadata_optional(arxiv_id)
@@ -487,8 +515,6 @@ class ArxivClient(ProviderClient):
         route_kind = normalize_text(
             content.route_kind if content is not None else ""
         ).lower()
-        if route_kind != "html":
-            return empty_asset_results()
         merged_metadata = (
             content.merged_metadata
             if content is not None
@@ -501,27 +527,57 @@ class ArxivClient(ProviderClient):
         article_html = bytes(
             content.body if content is not None else raw_payload.body or b""
         ).decode("utf-8", errors="replace")
-        return download_arxiv_html_figure_assets(
-            self.transport,
-            ArxivHtmlAssetDownloadPlan(
-                arxiv_id=arxiv_id,
+        result = (
+            download_arxiv_html_figure_assets(
+                self.transport,
+                ArxivHtmlAssetDownloadPlan(
+                    arxiv_id=arxiv_id,
+                    article_id=article_id,
+                    article_html=article_html,
+                    source_url=normalize_text(
+                        content.source_url
+                        if content is not None
+                        else raw_payload.source_url
+                    ),
+                    extracted_assets=(
+                        content.extracted_assets if content is not None else []
+                    ),
+                    output_dir=output_dir,
+                    user_agent=self.user_agent,
+                    asset_profile=asset_profile,
+                    runtime_context=context,
+                    image_headers=self._image_headers(),
+                ),
+            )
+            if route_kind == "html"
+            else empty_asset_results()
+        )
+        ancillary = content.diagnostics.get("arxiv_ancillary") if content else None
+        if asset_profile == "all" and ancillary is not None:
+            supplementary = html_assets.download_assets(
+                html_assets.SUPPLEMENTARY_KIND,
+                self.transport,
                 article_id=article_id,
-                article_html=article_html,
-                source_url=normalize_text(
-                    content.source_url
-                    if content is not None
-                    else raw_payload.source_url
-                ),
-                extracted_assets=(
-                    content.extracted_assets if content is not None else []
-                ),
+                assets=ancillary["assets"],
                 output_dir=output_dir,
                 user_agent=self.user_agent,
                 asset_profile=asset_profile,
-                runtime_context=context,
-                image_headers=self._image_headers(),
-            ),
-        )
+                options=html_assets.AssetDownloadOptions(
+                    allowed_hosts=("arxiv.org",),
+                    provider_name=self.name,
+                    runtime_context=context,
+                    asset_download_concurrency=_arxiv_asset_download_concurrency(
+                        context.env
+                    ),
+                ),
+            )
+            paths = {item["url"]: item["source_path"] for item in ancillary["assets"]}
+            for item in supplementary["assets"]:
+                item["source_path"] = paths[item["download_url"]]
+            result["assets"].extend(supplementary["assets"])
+            result["asset_failures"].extend(ancillary["asset_failures"])
+            result["asset_failures"].extend(supplementary["asset_failures"])
+        return result
 
     def to_article_model(
         self,
@@ -614,7 +670,10 @@ class ArxivClient(ProviderClient):
             assets=[
                 dict(item)
                 for item in (
-                    list(content.extracted_assets if content is not None else [])
+                    [
+                        *list(content.extracted_assets if content is not None else []),
+                        *list(downloaded_assets or []),
+                    ]
                     if route == PDF_FALLBACK
                     else list(downloaded_assets or [])
                 )
@@ -648,15 +707,17 @@ class ArxivClient(ProviderClient):
         ):
             return artifacts
         pdf_assets = list(content.extracted_assets if content is not None else [])
+        ancillary = content.diagnostics.get("arxiv_ancillary") if content else None
+        all_assets = [*list(artifacts.assets), *pdf_assets]
         return ProviderArtifacts(
-            assets=[*list(artifacts.assets), *pdf_assets],
+            assets=all_assets,
             asset_failures=list(artifacts.asset_failures),
-            allow_related_assets=False,
-            text_only=not pdf_assets,
+            allow_related_assets=ancillary is not None,
+            text_only=not all_assets,
             skip_trace=trace_from_markers(
                 [download_marker("arxiv_assets_skipped_text_only")]
             )
-            if not pdf_assets
+            if not all_assets
             else [],
         )
 
@@ -700,7 +761,7 @@ PROVIDER_BUNDLE = ProviderBundle(
                 kind="assets",
                 hosts=("arxiv.org",),
                 qps=1 / 3,
-                asset_scope="body",
+                asset_scope="all",
             ),
         ),
     ),

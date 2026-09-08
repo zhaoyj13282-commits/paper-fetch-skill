@@ -308,11 +308,22 @@ def extract_elsevier_asset_references(
     if root is None:
         return []
 
+    mathml_alt_images = {
+        infer_elsevier_asset_group_key(str(element.get("altimg")))
+        for element in root.iter()
+        if element.tag == "{http://www.w3.org/1998/Math/MathML}math"
+        and element.get("altimg")
+    }
     references_by_key: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
 
     def register(
         reference: dict[str, Any], *, key: tuple[str, str], priority: int
     ) -> None:
+        # MathML already supplies these formula images' semantic content.
+        # Apply this to both object and attachment representations; the object
+        # index used by formula fallback remains intact.
+        if key[1] in mathml_alt_images:
+            return
         existing = references_by_key.get(key)
         if existing is None or priority < existing[0]:
             references_by_key[key] = (priority, reference)

@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any
 from collections.abc import Mapping
-from urllib.parse import quote, urljoin
+from urllib.parse import parse_qs, quote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Comment, Tag
 
@@ -728,7 +728,9 @@ def extract_asset_html_scopes(html_text: str, source_url: str) -> tuple[str, str
         _abstract_sections,
         _container_evidence,
     ) = _cleaned_article_html(html_text, source_url)
-    return article_html, ""
+    soup = BeautifulSoup(html_text, choose_parser())
+    supplementary = soup.select_one("#supplementary_data")
+    return article_html, str(supplementary) if supplementary is not None else ""
 
 
 def extract_scoped_html_assets(
@@ -743,9 +745,54 @@ def extract_scoped_html_assets(
         body_html,
         source_url,
         asset_profile=asset_profile,
-        supplementary_html_text=supplementary_html,
+        supplementary_html_text="",
         noise_profile=ANNUALREVIEWS_NOISE_PROFILE,
     )
+    if asset_profile == "all" and supplementary_html:
+        doi = normalize_doi(parse_html_metadata(html_text, source_url).get("doi"))
+        if not doi:
+            doi = normalize_doi(extract_doi(source_url))
+        soup = BeautifulSoup(supplementary_html, choose_parser())
+        seen_urls: set[str] = set()
+        for anchor in soup.select("a[href]"):
+            url = urljoin(source_url, str(anchor.get("href") or ""))
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or parsed.hostname not in {"annualreviews.org", "www.annualreviews.org"}
+                or not parsed.path.startswith("/deliver/fulltext/")
+                or not parsed.path.lower().endswith((".pdf", ".mpg"))
+            ):
+                continue
+            item_ids = parse_qs(parsed.query).get("itemId", [])
+            if len(item_ids) != 1:
+                continue
+            parent = re.fullmatch(
+                r"/content/suppdata/(10\.1146/.+)/[0-9]+", item_ids[0]
+            )
+            if (
+                not parent
+                or not doi
+                or normalize_doi(parent[1]) != doi
+                or url in seen_urls
+            ):
+                continue
+            seen_urls.add(url)
+            paragraph = anchor.find_parent("p")
+            label = paragraph.find(["b", "strong"]) if paragraph is not None else None
+            assets.append(
+                {
+                    "kind": "supplementary",
+                    "heading": normalize_text(
+                        (label or anchor).get_text(" ", strip=True)
+                    ),
+                    "caption": normalize_text(paragraph.get_text(" ", strip=True))
+                    if paragraph is not None
+                    else "",
+                    "section": "supplementary",
+                    "url": url,
+                }
+            )
     return _dedupe_assets(assets)
 
 

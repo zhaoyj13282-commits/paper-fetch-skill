@@ -973,3 +973,44 @@ class AtyponBrowserWorkflowProviderAssetDownloadTests(
         self.assertEqual(result["assets"][0]["width"], 640)
         self.assertEqual(result["assets"][0]["height"], 480)
         self.assertTrue(result["assets"][0]["preview_accepted"])
+
+    def test_wiley_supplement_click_failure_does_not_use_http_or_repeat_click(self):
+        url = "https://onlinelibrary.wiley.com/action/downloadSupplement?doi=10.1111/test&file=si.docx"
+        html = f'''<article><section class="article-section__supporting">
+        <h2>Supporting Information</h2><a href="{url}">si.docx</a></section></article>'''
+        transport = AssetTransport({})
+        client = wiley_provider.WileyClient(transport, {})
+        fetcher = mock.Mock(return_value=None)
+        fetcher.failure_for.return_value = {
+            "reason": "wiley_supplement_download_timeout"
+        }
+        refresh = mock.Mock()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runtime = self._runtime_config(tmpdir, "wiley", "10.1111/test")
+            raw = _typed_raw_payload(
+                provider="wiley",
+                source_url="https://onlinelibrary.wiley.com/doi/full/10.1111/test",
+                content_type="text/html",
+                body=html.encode(),
+                route="html",
+                browser_context_seed={},
+            )
+            install_browser_workflow_deps(
+                client,
+                load_runtime_config=mock.Mock(return_value=runtime),
+                ensure_runtime_ready=mock.Mock(),
+                refresh_browser_context_seed=refresh,
+                _build_shared_browser_file_fetcher=mock.Mock(return_value=fetcher),
+            )
+            result = client.download_related_assets(
+                "10.1111/test",
+                {"doi": "10.1111/test"},
+                raw,
+                Path(tmpdir),
+                asset_profile="all",
+            )
+        assert result["assets"] == []
+        assert len(result["asset_failures"]) == 1
+        assert transport.calls == []
+        fetcher.assert_called_once()
+        refresh.assert_not_called()

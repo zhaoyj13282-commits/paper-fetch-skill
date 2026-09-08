@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 import html
+import json
 from pathlib import PurePosixPath
 from typing import Any
 from collections.abc import Mapping, Sequence
@@ -886,6 +887,69 @@ class FrontiersClient(ProviderClient):
             != PDF_FALLBACK
         )
 
+    def _resolve_supplementary_urls(
+        self,
+        assets: Sequence[Mapping[str, Any]],
+        doi: str,
+    ) -> list[dict[str, Any]]:
+        resolved = [dict(asset) for asset in assets]
+        pending = [
+            asset
+            for asset in resolved
+            if asset.get("archive_state") == "not_archived"
+            and asset.get("source_href")
+            and PurePosixPath(str(asset["source_href"])).name == asset["source_href"]
+            and not urllib.parse.urlparse(str(asset["source_href"])).scheme
+        ]
+        article_id = _article_id_from_doi(doi)
+        if not pending or not article_id:
+            return resolved
+        api_url = f"{FRONTIERS_HOST}/api/v4/articles/{article_id}/supplemental-data"
+        try:
+            response = self.transport.request(
+                "GET",
+                api_url,
+                headers={"Accept": "application/json", "User-Agent": self.user_agent},
+                timeout=DEFAULT_FULLTEXT_TIMEOUT_SECONDS,
+            )
+            status = int(response.get("status_code") or 200)
+            if status >= 400:
+                raise ValueError(f"HTTP {status}")
+            entries = json.loads(_response_body(response))
+            if not isinstance(entries, list):
+                raise ValueError("invalid attachment list")
+        except (RequestFailure, ValueError) as exc:
+            for asset in pending:
+                asset["not_archived_reason"] = (
+                    f"Frontiers supplemental-data lookup failed: {exc}"
+                )
+            return resolved
+        for asset in pending:
+            name = re.sub(r"[\s_]+", "", str(asset["source_href"])).casefold()
+            matches = [
+                entry
+                for entry in entries
+                if isinstance(entry, Mapping)
+                and re.sub(r"[\s_]+", "", str(entry.get("name") or "")).casefold()
+                == name
+            ]
+            if len(matches) != 1:
+                continue
+            url = str(matches[0].get("downloadUrl") or "")
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                continue
+            asset.update(
+                download_url=url,
+                original_url=url,
+                link=url,
+                archive_state="downloadable",
+                source_page_url=api_url,
+                filename_hint=str(matches[0]["name"]),
+            )
+            asset.pop("not_archived_reason", None)
+        return resolved
+
     def download_related_assets(
         self,
         doi: str,
@@ -991,6 +1055,14 @@ class FrontiersClient(ProviderClient):
                 )
             )
         if asset_profile == "all" and supplementary_assets:
+            supplementary_assets = self._resolve_supplementary_urls(
+                supplementary_assets, doi
+            )
+            if content is not None:
+                content = replace(
+                    content, extracted_assets=[*body_assets, *supplementary_assets]
+                )
+                raw_payload.content = content
             downloadable = [
                 dict(asset)
                 for asset in supplementary_assets

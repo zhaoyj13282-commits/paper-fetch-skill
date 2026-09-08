@@ -1814,12 +1814,13 @@ def test_exact_script_response_policy_fulfills_only_matching_script(
     assert trace["blocked_request_count"] == 0
 
 
-def test_pnas_body_readiness_uses_bounded_budget_and_keeps_final_html(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize(("publisher", "budget"), [("pnas", 8.0), ("aip", 90.0)])
+def test_body_readiness_uses_bounded_budget_and_keeps_final_html(
+    monkeypatch, tmp_path, publisher, budget
 ) -> None:
     context = _Context()
     config = BrowserRuntimeConfig(
-        provider="pnas",
+        provider=publisher,
         doi="10.1073/example",
         artifact_dir=tmp_path,
         headless=True,
@@ -1845,15 +1846,15 @@ def test_pnas_body_readiness_uses_bounded_budget_and_keeps_final_html(
 
     result = _playwright_browser.fetch_html_with_playwright(
         ["https://www.pnas.org/doi/10.1073/example"],
-        publisher="pnas",
+        publisher=publisher,
         config=config,
         wait_seconds=8,
         readiness=BrowserHtmlReadiness(wait_for_article_body=True),
-        options=browser_runtime.BrowserHtmlFetchOptions(readiness_budget_seconds=8.0),
+        options=browser_runtime.BrowserHtmlFetchOptions(readiness_budget_seconds=budget),
     )
 
     assert len(captured_timeout) == 1
-    assert 0 < captured_timeout[0] <= 8.0
+    assert 0 < captured_timeout[0] <= budget
     assert "Full text" in result.html
     candidate = result.diagnostics["browser_runtime_trace"]["candidates"][0]
     assert candidate["dom_readiness_result"] == "timeout"
