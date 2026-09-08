@@ -1850,7 +1850,9 @@ def test_body_readiness_uses_bounded_budget_and_keeps_final_html(
         config=config,
         wait_seconds=8,
         readiness=BrowserHtmlReadiness(wait_for_article_body=True),
-        options=browser_runtime.BrowserHtmlFetchOptions(readiness_budget_seconds=budget),
+        options=browser_runtime.BrowserHtmlFetchOptions(
+            readiness_budget_seconds=budget
+        ),
     )
 
     assert len(captured_timeout) == 1

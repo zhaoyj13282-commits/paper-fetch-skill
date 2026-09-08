@@ -6,6 +6,25 @@
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.2.1 - 2026-09-08
+
+### 新增——arXiv 官方附件
+
+- `asset_profile=all` 现在在 HTML 和 PDF 路线下载同论文、同版本的官方 Ancillary files。摘要页身份核验会将无版本输入固定到明确版本，后续 metadata enrichment 保留该版本。附件在 `Supplementary Materials` 中只展示一次，并保留来源和逐文件失败证据。默认 `body` 及禁止资产落盘的请求不执行附件发现。
+
+### 修复——出版社补充材料下载
+
+- Wiley 补充文件改为在文章浏览器会话中点击匹配链接下载。折叠或重绘的面板在有界等待内重新展开，通过下载事件及对应响应获取文件字节和元信息；缺失链接、阻断页面和超时保留诊断，并受共享请求预算约束。
+- Annual Reviews 从补充材料区获取官方 PDF、MPG 附件，并核对父论文 DOI。Frontiers 通过同篇 supplemental-data API 唯一匹配相对附件名，无匹配的文件仍明确标记为未归档。
+- AMS 纳入正文引用的本篇补充附件，并按 URL 去重。IOP 同时识别 `SM` 和 `supp` 编号的附件链接。AIP ZIP 链接及 Taylor & Francis 下载链接现在提供正确的附件文件名。
+- Oxford Academic 优先使用附件区链接，排除正文 PDF 和非 HTTP 导航；等价的 CDN 签名链接在下载前去重，实际下载保留完整 URL。
+- Elsevier 不再下载已有 MathML 语义的公式位图，合并重复的 accepted-manuscript PDF 引用，并在生成补充材料链接时使用匹配资产的本地路径。
+
+### 修复——浏览器正文等待与资产执行
+
+- AIP 正文 readiness 在剩余请求预算内最多等待 90 秒，正文稳定后提前结束；超时仍保留诊断和 PDF fallback 的剩余预算。
+- Browser 资产规划现在接收 provider client；Silverchair 图页恢复在两种受支持浏览器后端下均保留在调用线程执行。
+
 ## 6.2.0 - 2026-09-07
 
 ### 新增——CLI 实时进度与协作式取消

@@ -6,6 +6,25 @@ All notable public changes to `paper-fetch-skill` are documented in this file.
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.2.1 - 2026-09-08
+
+### Added — arXiv ancillary files
+
+- `asset_profile=all` now downloads official ancillary files for the same paper and version on both HTML and PDF routes. Abstract-page identity checks pin unversioned inputs to an explicit version; later metadata enrichment preserves it. Attachments appear once in `Supplementary Materials`, with provenance and per-file failure evidence. The default `body` profile and requests that disable asset output do not perform ancillary discovery.
+
+### Fixed — publisher supplementary downloads
+
+- Wiley supporting files now download by clicking the matching link in the article browser session. Collapsed or redrawn panels are reopened within bounded waits; download events and matching responses supply file bytes and metadata. Missing links, blocked pages, and timeouts retain diagnostics within the shared request budget.
+- Annual Reviews now retrieves official PDF and MPG attachments from the supplementary section after checking the parent DOI. Frontiers resolves relative supplementary filenames through the same article's supplemental-data API only when there is a unique match; unmatched files remain explicitly unarchived.
+- AMS includes same-article supplementary links cited in the body and removes duplicate URLs. IOP accepts both `SM` and `supp` numbered attachment links. AIP ZIP links and Taylor & Francis download links now supply the intended attachment filename.
+- Oxford Academic prefers links from the attachment section, excludes article PDFs and non-HTTP navigation, and deduplicates equivalent signed CDN links while retaining the complete download URL.
+- Elsevier no longer downloads formula bitmaps already represented by MathML, merges duplicate accepted-manuscript PDF references, and uses the matched supplementary asset's local path when rendering links.
+
+### Fixed — browser readiness and asset execution
+
+- AIP article readiness can now wait up to 90 seconds within the remaining request budget, ending early when the body is stable and preserving timeout diagnostics and the remaining PDF fallback budget.
+- Browser asset planning now receives the provider client, and Silverchair figure-page recovery stays on the caller thread for either supported browser backend.
+
 ## 6.2.0 - 2026-09-07
 
 ### Added — CLI progress and cooperative cancellation

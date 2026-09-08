@@ -418,6 +418,7 @@ class ArxivClient(ProviderClient):
         ancillary = None
         if (
             context.asset_profile == "all"
+            and context.artifact_store is not None
             and context.artifact_store.asset_download_dir is not None
         ):
             arxiv_id, ancillary = discover_arxiv_ancillary_assets(
