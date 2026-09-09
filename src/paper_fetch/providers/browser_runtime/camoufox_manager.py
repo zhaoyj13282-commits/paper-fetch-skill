@@ -9,15 +9,16 @@ import sys
 import threading
 from typing import Any
 
+from .preparation import prepare_camoufox_managed_runtime
+
 
 def _launch_executable_path(binary_path: str | None) -> str | None:
     if binary_path:
         return binary_path
-    pkgman = importlib.import_module("camoufox.pkgman")
-    # Keep the no-download guard, but let Camoufox resolve its managed bundle.
+    prepare_camoufox_managed_runtime()
+    # Let Camoufox resolve its prepared managed bundle.
     # On macOS, passing Contents/MacOS/camoufox as a custom executable makes
     # Camoufox look beside it for metadata stored under Contents/Resources.
-    pkgman.camoufox_path(download_if_missing=False)
     return None
 
 

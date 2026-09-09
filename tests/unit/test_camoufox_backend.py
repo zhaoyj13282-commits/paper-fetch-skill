@@ -306,6 +306,11 @@ def test_camoufox_startup_output_is_kept_off_protocol_stdout(
 
 
 def test_camoufox_official_runtime_path_is_resolved_by_package(monkeypatch) -> None:
+    prepare = mock.Mock()
+    monkeypatch.setattr(
+        "paper_fetch.providers.browser_runtime.camoufox_manager.prepare_camoufox_managed_runtime",
+        prepare,
+    )
     runtime_path = object()
     pkgman = SimpleNamespace(
         camoufox_path=mock.Mock(return_value=runtime_path),
@@ -336,9 +341,11 @@ def test_camoufox_official_runtime_path_is_resolved_by_package(monkeypatch) -> N
 
     manager = CamoufoxBrowserManager(headless=True)
     assert manager.browser() is browser
+    assert manager.browser() is browser
     manager.close()
 
-    pkgman.camoufox_path.assert_called_once_with(download_if_missing=False)
+    prepare.assert_called_once_with()
+    pkgman.camoufox_path.assert_not_called()
     pkgman.launch_path.assert_not_called()
     new_browser.assert_called_once_with(
         playwright,
@@ -347,9 +354,14 @@ def test_camoufox_official_runtime_path_is_resolved_by_package(monkeypatch) -> N
     )
 
 
-def test_camoufox_manager_only_resolves_prepared_runtime_without_downloading(
+def test_camoufox_manager_prepares_once_per_browser_lifecycle(
     monkeypatch,
 ) -> None:
+    prepare = mock.Mock()
+    monkeypatch.setattr(
+        "paper_fetch.providers.browser_runtime.camoufox_manager.prepare_camoufox_managed_runtime",
+        prepare,
+    )
     order: list[str] = []
     browser = SimpleNamespace(close=mock.Mock())
     playwright = SimpleNamespace(stop=mock.Mock())
@@ -376,15 +388,22 @@ def test_camoufox_manager_only_resolves_prepared_runtime_without_downloading(
 
     manager = CamoufoxBrowserManager(headless=True)
     assert manager.browser() is browser
+    assert manager.browser() is browser
     manager.close()
 
-    assert order == ["resolve"]
-    pkgman.camoufox_path.assert_called_once_with(download_if_missing=False)
+    assert order == []
+    prepare.assert_called_once_with()
+    pkgman.camoufox_path.assert_not_called()
 
 
 def test_camoufox_persistent_official_runtime_path_is_resolved_by_package(
     monkeypatch, tmp_path
 ) -> None:
+    prepare = mock.Mock()
+    monkeypatch.setattr(
+        "paper_fetch.providers.browser_runtime.camoufox_manager.prepare_camoufox_managed_runtime",
+        prepare,
+    )
     runtime_path = object()
     pkgman = SimpleNamespace(
         camoufox_path=mock.Mock(return_value=runtime_path),
@@ -418,9 +437,11 @@ def test_camoufox_persistent_official_runtime_path_is_resolved_by_package(
         headless=False,
     )
     assert manager.new_context() is context
+    assert manager.new_context() is context
     manager.close()
 
-    pkgman.camoufox_path.assert_called_once_with(download_if_missing=False)
+    prepare.assert_called_once_with()
+    pkgman.camoufox_path.assert_not_called()
     pkgman.launch_path.assert_not_called()
     new_browser.assert_called_once_with(
         playwright,
@@ -506,7 +527,12 @@ def test_camoufox_manager_stops_playwright_when_runtime_readiness_check_fails(
     playwright.stop.assert_called_once_with()
 
 
-def test_camoufox_first_launch_requires_prepared_official_runtime(monkeypatch) -> None:
+def test_camoufox_first_launch_prepares_official_runtime(monkeypatch) -> None:
+    prepare = mock.Mock()
+    monkeypatch.setattr(
+        "paper_fetch.providers.browser_runtime.camoufox_manager.prepare_camoufox_managed_runtime",
+        prepare,
+    )
     runtime_path = object()
     pkgman = SimpleNamespace(
         camoufox_path=mock.Mock(return_value=runtime_path),
@@ -522,7 +548,8 @@ def test_camoufox_first_launch_requires_prepared_official_runtime(monkeypatch) -
     )
 
     assert _launch_executable_path(None) is None
-    pkgman.camoufox_path.assert_called_once_with(download_if_missing=False)
+    prepare.assert_called_once_with()
+    pkgman.camoufox_path.assert_not_called()
     pkgman.launch_path.assert_not_called()
 
 
@@ -679,7 +706,7 @@ def test_camoufox_probe_rejects_parent_traversal(tmp_path) -> None:
     assert safe is False
 
 
-def test_camoufox_runtime_readiness_rejects_missing_runtime_without_download(
+def test_camoufox_runtime_readiness_allows_missing_runtime_for_launch_preparation(
     monkeypatch, tmp_path
 ) -> None:
     backend = CamoufoxBackend()
@@ -705,8 +732,7 @@ def test_camoufox_runtime_readiness_rejects_missing_runtime_without_download(
         mock.Mock(side_effect=AssertionError("readiness must not spawn a process")),
     )
 
-    with pytest.raises(ProviderFailure, match="runtime is missing"):
-        backend.ensure_runtime_ready(config)
+    backend.ensure_runtime_ready(config)
 
 
 def test_camoufox_status_distinguishes_package_and_runtime_readiness(
@@ -2680,3 +2706,470 @@ def test_science_final_document_response_ownership(monkeypatch, tmp_path, scenar
         if scenario == "isolation":
             assert count == 2
     assert all(not callbacks for callbacks in listeners.values())
+
+
+@pytest.fixture
+def managed_camoufox(monkeypatch, tmp_path):
+    """Exercise upstream version selection/install against an isolated fake archive."""
+    import zipfile
+    from camoufox import multiversion, pkgman
+
+    root = tmp_path / "managed"
+    monkeypatch.setattr(pkgman, "INSTALL_DIR", root)
+    monkeypatch.setattr(multiversion, "INSTALL_DIR", root)
+    monkeypatch.setattr(multiversion, "BROWSERS_DIR", root / "browsers")
+    monkeypatch.setattr(multiversion, "CONFIG_FILE", root / "config.json")
+    monkeypatch.setattr(multiversion, "COMPAT_FLAG", root / ".0.5_FLAG")
+    monkeypatch.setattr(pkgman, "OS_NAME", "lin")
+    monkeypatch.setattr(multiversion, "OS_NAME", "lin")
+    # File modes are immaterial to this dummy binary; avoid shelling out to chmod.
+    monkeypatch.setattr(multiversion.os, "system", lambda _command: 0)
+
+    old = pkgman.AvailableVersion(
+        pkgman.Version("beta.27", "152.0.3"), "https://example.test/old.zip", False
+    )
+    latest = pkgman.AvailableVersion(
+        pkgman.Version("beta.28", "152.0.4"), "https://example.test/latest.zip", False
+    )
+    query = mock.Mock(return_value=[latest, old])
+    monkeypatch.setattr(pkgman, "list_available_versions", query)
+
+    def download(file, _url):
+        print("fake download progress")
+        with zipfile.ZipFile(file, "w") as archive:
+            archive.writestr("camoufox-bin", "dummy executable")
+        file.seek(0)
+        return file
+
+    downloader = mock.Mock(side_effect=download)
+    monkeypatch.setattr(pkgman.CamoufoxFetcher, "download_file", downloader)
+
+    def install_local(version=old, *, active=True):
+        path = root / "browsers" / "official" / version.version.full_string
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "version.json").write_text(json.dumps(version.to_metadata()))
+        (path / "camoufox-bin").write_text("old executable")
+        if active:
+            multiversion.set_active(path.relative_to(root).as_posix())
+        return path
+
+    return SimpleNamespace(
+        root=root,
+        pkgman=pkgman,
+        multi=multiversion,
+        old=old,
+        latest=latest,
+        query=query,
+        download=downloader,
+        install_local=install_local,
+    )
+
+
+def test_managed_camoufox_missing_installs_and_latest_reuses(managed_camoufox, capsys):
+    env = managed_camoufox
+    first = preparation.prepare_camoufox_managed_runtime()
+    assert first.valid and first.version == env.latest.version.full_string
+    assert preparation.prepare_camoufox_managed_runtime() == first
+    assert env.query.call_count == 2
+    env.download.assert_called_once()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "fake download progress" in captured.err
+    assert env.multi.COMPAT_FLAG.is_file()
+
+
+def test_managed_camoufox_updates_without_removing_old(managed_camoufox):
+    env = managed_camoufox
+    old_path = env.install_local()
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.version == env.latest.version.full_string
+    assert (old_path / "camoufox-bin").read_text() == "old executable"
+    assert env.multi.load_config()["active_version"] == result.active_spec
+
+
+@pytest.mark.parametrize("local", [True, False])
+def test_managed_camoufox_pin_only_prepares_requested_version(managed_camoufox, local):
+    env = managed_camoufox
+    if local:
+        env.install_local()
+    env.multi.save_config(
+        {
+            "channel": "official/stable",
+            "pinned": env.old.version.full_string,
+            "unrelated": "preserve",
+        }
+    )
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.version == env.old.version.full_string
+    assert env.multi.load_config()["pinned"] == env.old.version.full_string
+    assert env.multi.load_config()["unrelated"] == "preserve"
+    assert env.query.call_count == (0 if local else 1)
+    assert env.download.call_count == (0 if local else 1)
+
+
+def test_managed_camoufox_respects_prerelease_channel(managed_camoufox):
+    env = managed_camoufox
+    env.old.is_prerelease = True
+    env.multi.save_config({"channel": "official/prerelease"})
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.version == env.old.version.full_string
+    assert env.query.call_args.kwargs == {"include_prerelease": True}
+    assert env.query.call_args.args[0].name == "Official"
+    assert env.multi.load_config()["channel"] == "official/prerelease"
+
+
+@pytest.mark.parametrize("failure", ["query", "download", "validation"])
+@pytest.mark.parametrize("local", [True, False])
+def test_managed_camoufox_failure_uses_only_valid_local_runtime(
+    managed_camoufox, capsys, failure, local
+):
+    env = managed_camoufox
+    if local:
+        env.install_local()
+    if failure == "query":
+        env.query.side_effect = OSError("offline")
+    elif failure == "download":
+        env.download.side_effect = OSError("interrupted")
+    else:
+        # A successfully unpacked archive can still lack its executable.
+        import zipfile
+
+        def empty_archive(file, _url):
+            with zipfile.ZipFile(file, "w"):
+                pass
+            file.seek(0)
+
+        env.download.side_effect = empty_archive
+    if local:
+        result = preparation.prepare_camoufox_managed_runtime()
+        assert result.valid and result.version == env.old.version.full_string
+        assert preparation.probe_camoufox_managed_runtime() == result
+        assert "using local" in capsys.readouterr().err
+    else:
+        with pytest.raises(RuntimeError, match="Camoufox browser preparation failed"):
+            preparation.prepare_camoufox_managed_runtime()
+        assert not preparation.probe_camoufox_managed_runtime().valid
+
+
+def test_managed_camoufox_repairs_only_broken_target(managed_camoufox):
+    env = managed_camoufox
+    old_path = env.install_local()
+    target = env.install_local(env.latest, active=False)
+    (target / "camoufox-bin").unlink()
+    (target / "leftover").touch()
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid and result.runtime_path == target
+    assert not (target / "leftover").exists()
+    assert old_path.is_dir()
+    env.download.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "payload", ["{", "[]", '{"active_version": 42}', '{"channel":"official/unknown"}']
+)
+def test_managed_camoufox_rejects_config_without_reset(managed_camoufox, payload):
+    env = managed_camoufox
+    env.root.mkdir()
+    env.multi.CONFIG_FILE.write_text(payload)
+    with pytest.raises(RuntimeError, match="preparation failed"):
+        preparation.prepare_camoufox_managed_runtime()
+    assert env.multi.CONFIG_FILE.read_text() == payload
+    env.query.assert_not_called()
+    env.download.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "unsafe", ["active", "target", "config", "lock", "flag", "metadata", "executable"]
+)
+def test_managed_camoufox_rejects_unsafe_paths(managed_camoufox, tmp_path, unsafe):
+    env = managed_camoufox
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    marker = outside / "keep"
+    marker.write_text("untouched")
+    env.root.mkdir()
+    if unsafe == "active":
+        env.multi.save_config({"active_version": "../outside"})
+    else:
+        target = env.install_local(env.latest, active=False)
+        paths = {
+            "target": target,
+            "config": env.multi.CONFIG_FILE,
+            "lock": env.root / ".paper-fetch-prepare.lock",
+            "flag": env.multi.COMPAT_FLAG,
+            "metadata": target / "version.json",
+            "executable": target / "camoufox-bin",
+        }
+        path = paths[unsafe]
+        if path.is_dir():
+            import shutil
+
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+        try:
+            path.symlink_to(
+                outside if unsafe == "target" else marker,
+                target_is_directory=unsafe == "target",
+            )
+        except OSError:
+            pytest.skip("symlink creation unavailable")
+    with pytest.raises(RuntimeError, match="preparation failed"):
+        preparation.prepare_camoufox_managed_runtime()
+    assert marker.read_text() == "untouched"
+    env.download.assert_not_called()
+
+
+def test_managed_camoufox_concurrent_preparation_installs_once(managed_camoufox):
+    from concurrent.futures import ThreadPoolExecutor
+
+    env = managed_camoufox
+    barrier = threading.Barrier(2)
+
+    def prepare():
+        barrier.wait(timeout=5)
+        return preparation.prepare_camoufox_managed_runtime()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _index: prepare(), range(2)))
+    assert results[0] == results[1]
+    assert all(result.valid for result in results)
+    env.download.assert_called_once()
+
+
+def test_managed_camoufox_static_status_never_prepares(managed_camoufox):
+    env = managed_camoufox
+    status = CamoufoxBackend().probe_runtime_status({}, provider="science")
+    assert status.status == "not_configured"
+    assert not env.root.exists()
+    env.query.assert_not_called()
+    env.download.assert_not_called()
+
+
+def test_explicit_camoufox_binary_skips_management(monkeypatch):
+    prepare = mock.Mock(side_effect=AssertionError("must not manage explicit binary"))
+    monkeypatch.setattr(
+        "paper_fetch.providers.browser_runtime.camoufox_manager.prepare_camoufox_managed_runtime",
+        prepare,
+    )
+    assert _launch_executable_path("/custom/camoufox") == "/custom/camoufox"
+    prepare.assert_not_called()
+
+
+@pytest.mark.parametrize("route", ["fetch", "preflight", "auth"])
+@pytest.mark.parametrize("download_available", [True, False])
+def test_browser_entrypoints_prepare_missing_runtime(
+    managed_camoufox, monkeypatch, tmp_path, route, download_available
+):
+    import camoufox.sync_api as camoufox_sync
+    import playwright.sync_api as playwright_sync
+    from paper_fetch import auth, browser_preflight
+
+    env = managed_camoufox
+    if not download_available:
+        env.query.side_effect = OSError("offline")
+    playwright = SimpleNamespace(stop=mock.Mock())
+    monkeypatch.setattr(
+        playwright_sync,
+        "sync_playwright",
+        lambda: SimpleNamespace(start=lambda: playwright),
+    )
+    # Stop at the actual launch boundary, after preparation, without starting Firefox.
+    launch = mock.Mock(side_effect=RuntimeError("launch boundary reached"))
+    monkeypatch.setattr(camoufox_sync, "NewBrowser", launch)
+    # The real context boundary is safe here: NewBrowser and Playwright startup are mocked.
+    monkeypatch.setattr(
+        _playwright_browser,
+        "open_browser_context",
+        browser_runtime_context.open_browser_context,
+    )
+    runtime_env = {XDG_DATA_HOME_ENV_VAR: str(tmp_path / "data")}
+    expected = (
+        "launch boundary reached"
+        if download_available
+        else "Camoufox browser preparation failed"
+    )
+    if route == "fetch":
+        config = CamoufoxBackend().load_runtime_config(
+            runtime_env, provider="ieee", doi="10.1109/example"
+        )
+        CamoufoxBackend().ensure_runtime_ready(config)
+        with pytest.raises(browser_runtime.BrowserRuntimeFailure, match=expected):
+            browser_runtime.fetch_html_with_browser(
+                ["https://ieeexplore.ieee.org/document/123"],
+                publisher="ieee",
+                config=config,
+            )
+    elif route == "preflight":
+        result = browser_preflight.preflight_browser_provider(
+            "ieee", env=runtime_env, save_storage_state=False
+        )
+        assert result.status == "runtime_error"
+        assert expected in result.message
+    else:
+        with pytest.raises(ProviderFailure, match=expected):
+            auth.authenticate_provider_profile(
+                provider="wiley", env=runtime_env, confirm=None
+            )
+    assert preparation.probe_camoufox_managed_runtime().valid is download_available
+    assert launch.call_count == int(download_available)
+    env.query.assert_called_once()
+    playwright.stop.assert_called_once()
+
+
+def test_camoufox_missing_python_dependency_still_rejected(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "paper_fetch.providers.browser_runtime.backends.camoufox._dependency_details",
+        lambda: {"packages": {"camoufox": False, "playwright": True}},
+    )
+    config = BrowserRuntimeConfig(
+        provider="science",
+        doi="10.1126/example",
+        artifact_dir=tmp_path,
+        headless=True,
+        user_agent=None,
+    )
+    with pytest.raises(ProviderFailure, match="requires compatible") as error:
+        CamoufoxBackend().ensure_runtime_ready(config)
+    assert error.value.code == "not_configured"
+
+
+def test_managed_camoufox_pin_sha_does_not_reuse_different_asset(managed_camoufox):
+    env = managed_camoufox
+    old_path = env.install_local()
+    env.old.sha256 = "a" * 64
+    env.multi.save_config(
+        {
+            "active_version": old_path.relative_to(env.root).as_posix(),
+            "channel": "official/stable",
+            "pinned": env.old.version.full_string,
+            "pinned_sha": env.old.sha256,
+        }
+    )
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid and result.runtime_path.name.endswith("-aaaaaaaa")
+    assert env.multi.load_config()["pinned_sha"] == env.old.sha256
+    env.download.assert_called_once()
+    assert old_path.is_dir()
+
+
+def test_managed_camoufox_repairs_pinned_corrupt_metadata(managed_camoufox):
+    env = managed_camoufox
+    target = env.install_local()
+    (target / "version.json").write_text("{}")
+    config = env.multi.load_config()
+    config.update(channel="official/stable", pinned=env.old.version.full_string)
+    env.multi.save_config(config)
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid and result.runtime_path == target
+    env.download.assert_called_once()
+
+
+def test_managed_camoufox_mismatched_target_metadata_is_repaired(managed_camoufox):
+    env = managed_camoufox
+    env.install_local()
+    target = env.install_local(env.latest, active=False)
+    (target / "version.json").write_text(json.dumps(env.old.to_metadata()))
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid and result.version == env.latest.version.full_string
+    env.download.assert_called_once()
+
+
+def test_managed_camoufox_process_lock_prevents_duplicate_install(
+    managed_camoufox, tmp_path
+):
+    import multiprocessing
+
+    if "fork" not in multiprocessing.get_all_start_methods():
+        pytest.skip("uses fork to inherit the isolated upstream download stub")
+    env = managed_camoufox
+    context = multiprocessing.get_context("fork")
+    barrier = context.Barrier(2)
+    downloads = tmp_path / "downloads"
+    original_download = env.download.side_effect
+
+    def download(file, url):
+        with downloads.open("a") as output:
+            output.write("download\n")
+        return original_download(file, url)
+
+    env.download.side_effect = download
+
+    def prepare():
+        barrier.wait(timeout=10)
+        assert preparation.prepare_camoufox_managed_runtime().valid
+
+    processes = [context.Process(target=prepare) for _ in range(2)]
+    try:
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(timeout=15)
+            assert process.exitcode == 0
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+    assert downloads.read_text() == "download\n"
+    assert preparation.probe_camoufox_managed_runtime().valid
+
+
+def test_managed_camoufox_update_failure_keeps_legacy_cache(managed_camoufox):
+    env = managed_camoufox
+    env.root.mkdir()
+    (env.root / "version.json").write_text(json.dumps(env.old.to_metadata()))
+    (env.root / "camoufox-bin").write_text("legacy binary")
+    env.query.side_effect = OSError("offline")
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid and result.runtime_path == env.root
+    # Upstream resolution would erase this legacy cache without the compatibility flag.
+    assert env.pkgman.camoufox_path(download_if_missing=False) == env.root
+    assert (env.root / "camoufox-bin").read_text() == "legacy binary"
+
+
+def test_managed_camoufox_macos_bundle_probe_preserves_layout(
+    managed_camoufox, monkeypatch
+):
+    env = managed_camoufox
+    path = env.install_local(env.latest)
+    (path / "camoufox-bin").unlink()
+    contents = path / "Camoufox.app" / "Contents"
+    (contents / "Resources").mkdir(parents=True)
+    (contents / "Resources" / "properties.json").write_text("{}")
+    (contents / "MacOS").mkdir()
+    (contents / "MacOS" / "camoufox").write_text("dummy mac binary")
+    monkeypatch.setattr(env.pkgman, "OS_NAME", "mac")
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid
+    assert result.executable_path == contents / "MacOS" / "camoufox"
+    assert env.pkgman.camoufox_path(download_if_missing=False) == path
+    env.download.assert_not_called()
+
+
+def test_managed_camoufox_pin_failure_does_not_launch_wrong_version(managed_camoufox):
+    env = managed_camoufox
+    env.install_local()
+    config = env.multi.load_config()
+    config.update(channel="official/stable", pinned=env.latest.version.full_string)
+    env.multi.save_config(config)
+    env.query.side_effect = OSError("offline")
+    with pytest.raises(RuntimeError, match="preparation failed"):
+        preparation.prepare_camoufox_managed_runtime()
+    assert env.multi.load_config() == config
+    assert (
+        preparation.probe_camoufox_managed_runtime().version
+        == env.old.version.full_string
+    )
+
+
+def test_managed_camoufox_never_deletes_valid_active_for_mismatched_catalog(
+    managed_camoufox,
+):
+    env = managed_camoufox
+    target = env.install_local(env.latest)
+    (target / "version.json").write_text(json.dumps(env.old.to_metadata()))
+    result = preparation.prepare_camoufox_managed_runtime()
+    assert result.valid and result.version == env.old.version.full_string
+    assert (target / "camoufox-bin").read_text() == "old executable"
+    env.download.assert_not_called()

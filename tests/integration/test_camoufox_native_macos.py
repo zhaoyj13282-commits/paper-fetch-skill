@@ -68,6 +68,26 @@ def test_prepared_official_camoufox_bundle_launches_both_context_modes(
     )
     monkeypatch.setattr(multiversion, "COMPAT_FLAG", install_dir / ".0.5_FLAG")
 
+    # This gate proves the explicitly staged bundle, independent of new releases.
+    # Launch-time preparation still runs, with discovery limited to this asset.
+    version_data = json.loads((expected_runtime_path / "version.json").read_text())
+    staged_version = pkgman.AvailableVersion(
+        version=pkgman.Version.from_path(expected_runtime_path),
+        url="https://example.invalid/staged-camoufox.zip",
+        is_prerelease=version_data.get("prerelease", False),
+        sha256=version_data.get("sha256"),
+    )
+    monkeypatch.setattr(
+        pkgman, "list_available_versions", lambda *_args, **_kwargs: [staged_version]
+    )
+    monkeypatch.setattr(
+        multiversion,
+        "install_versioned",
+        lambda *_args, **_kwargs: pytest.fail(
+            "native bundle test must reuse the staged runtime"
+        ),
+    )
+
     original_launch_options = camoufox_sync_api.launch_options
     test_screen = Screen(max_width=1920, max_height=1080)
 

@@ -35,7 +35,7 @@ validated_purge_paths = true
 # 这些页面策略不改变下列 runtime 分发边界，也不提供原生 macOS 验证证据。
 runtime_bundle_built_in = false
 install_downloads_runtime = false
-managed_runtime_preparation = false
+managed_runtime_preparation = true
 native_bundle_gate = true
 # CLI stdin cancellation leaves browser cleanup on the owning request worker.
 cooperative_cancel_owner_thread_cleanup = true

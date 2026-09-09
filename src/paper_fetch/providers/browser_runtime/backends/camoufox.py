@@ -19,7 +19,6 @@ from ....config import (
     parse_positive_int_env,
     resolve_user_data_dir,
 )
-from ....failure import FailureDiagnostics
 from ....reason_codes import ERROR, NOT_CONFIGURED, OK, READY
 from ....utils import normalize_text, sanitize_filename
 from ... import _playwright_browser
@@ -181,21 +180,6 @@ class CamoufoxBackend:
                 NOT_CONFIGURED,
                 "Camoufox browser workflow requires compatible camoufox and playwright packages.",
             )
-        if not config.binary_path and not _runtime_installed(details):
-            raise ProviderFailure(
-                NOT_CONFIGURED,
-                "Camoufox Python packages are installed, but the browser runtime is missing. "
-                "Prepare it explicitly with `python -m camoufox fetch` before fetching.",
-                diagnostics=FailureDiagnostics(
-                    details={
-                        "package_ready": True,
-                        "runtime_installed": False,
-                        "runtime_valid": False,
-                        "download_required": True,
-                        "prepare_command": "python -m camoufox fetch",
-                    }
-                ),
-            )
 
     def probe_runtime_status(
         self,
@@ -268,7 +252,7 @@ class CamoufoxBackend:
                     if available
                     else (
                         "Camoufox Python packages are installed, but the browser runtime "
-                        "must be prepared explicitly before fetching."
+                        "will be prepared automatically before browser launch."
                         if package_ready
                         else "Camoufox browser runtime cannot be used until its Python packages are installed."
                     )

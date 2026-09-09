@@ -13,7 +13,7 @@ description: "获取并核验指定论文全文，或探测全文可用性。用
 - 只允许状态机的 BLOCKING 白名单暂停工作。普通上下文阅读/总结不因保存策略缺失而阻塞，后端选择本身也不要求用户确认。
 - 三个批量工具 `batch_resolve`、`batch_check`、`batch_fetch` 每次最多 50 条；输入规范化时即分块并保留原始 index，解析后跨块 DOI 去重。阶段依赖有序，同一阶段内身份独立的论文允许受控并发。
 - 按当前预设复用合格本地全文或同 scope 精确缓存；临时阅读不为查询缓存而要求目录。多篇完整阅读沿用单篇阅读预设取得每篇正文，不先批量抓取再重复获取；compact 无正文，bounded 可能截断。
-- 只在 provider、凭证或浏览器运行时可能影响结果时检查状态；browser provider 首次联网抓取前先做静态检查，按需 live 预检。普通工具不安装或修复 runtime，沿用已有准备授权；仅在结果明确要求时进入人工 auth，不绕过合法访问边界。
+- 只在 provider、凭证或浏览器运行时可能影响结果时检查状态；browser provider 首次联网抓取前先做静态检查，按需 live 预检。普通工具在实际启动浏览器前自动准备 managed runtime，尊重已有渠道和固定版本；仅在结果明确要求时进入人工 auth，不绕过合法访问边界。
 - 真实抓取和文件复用使用统一 acceptance 并核验实际响应或文件；不得用 `.gitignore` 或 `git status` 是否变化代替文件验收。仅探测时核对逐项 `probe_state`、证据、错误和未调度状态，不要求全文 acceptance，也不自动升级为抓取。
 - 不要仅因为本地没有 PDF 或缓存文本文件就断定论文不可读；也不要把 abstract-only 或 metadata-only 报告成全文成功。
 - Browser HTML 失败但 PDF/ePDF fallback 成功时，仍按 trace 中的精确 browser code 报告降级，并要求 `acceptance.overall=degraded`；不得用顶层 `status=ok` 抹掉 HTML failure provenance。

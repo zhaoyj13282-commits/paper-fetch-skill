@@ -156,7 +156,7 @@ Paper Fetch 不绕过付费墙或访问授权。可用性取决于 provider、�
 
 - Elsevier 官方 XML/API 和部分 PDF fallback 需要从 <https://dev.elsevier.com/> 申请 `ELSEVIER_API_KEY`。
 - 部分 provider 需要 Camoufox browser runtime 或用户已有的合法登录状态。
-- 安装器、CLI 的 `fetch`、`auth`、`browser-preflight`、MCP 和库调用都不会自动下载、更新或修复 Camoufox runtime。需要 browser provider 时，先显式运行 `python -m camoufox fetch`；离线环境必须在联网阶段预先准备对应 runtime。
+- 安装器不下载 Camoufox binary。CLI/MCP/库抓取、`auth` 和 `browser-preflight` 每次实际启动浏览器前自动补全或更新 managed runtime；无浏览器抓取与静态诊断不检查更新，同一浏览器生命周期只检查一次。尊重 Camoufox 渠道与版本固定配置；更新失败时提示并使用校验有效的本地版本，无可用版本则报告准备失败。显式 binary 路径仍由用户维护；离线使用需在联网阶段预置 runtime。
 - `paper-fetch doctor` 只做本地静态诊断；`paper-fetch browser-preflight` 才会启动浏览器并访问 provider 页面；只有结果明确要求认证时才运行 `paper-fetch auth <provider>`。
 
 ```bash

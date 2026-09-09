@@ -20,8 +20,14 @@ python -m pip install "paper-fetch-skill[full]"
 
 离线安装包始终按 `full` 构建，但不重新分发浏览器 binary。完全离线环境需提前
 准备 Camoufox active runtime，包括相邻配置、addons 和字体；只复制可执行文件
-不足以组成可用 runtime。联网时须显式运行 `python -m camoufox fetch`；普通 fetch、
-auth 和 preflight 只读探测并使用已准备的 runtime。
+不足以组成可用 runtime。普通 fetch、auth 和 preflight 在实际启动浏览器前自动
+补全或更新 managed runtime；安装器不下载 runtime，也不自动安装缺失的 Python 依赖。
+可在联网时显式运行 `python -m camoufox fetch` 提前准备。
+
+使用 Camoufox 的 `python -m camoufox set official/stable` 选择渠道，或
+`python -m camoufox set official/stable/152.0.4-beta.28` 固定版本。未固定时每次
+启动前检查该渠道的最新兼容版本；固定时只补全对应版本。更新失败但本地版本
+校验有效时提示并继续使用；没有可用版本则报告浏览器准备失败。下载进度写 stderr。
 
 ## 选择与配置
 
@@ -46,18 +52,19 @@ macOS 官方 managed app bundle 把 executable 放在 `Contents/MacOS`，把运�
 放在 `Contents/Resources`。不要把官方 cache 内的
 `Contents/MacOS/camoufox` 配置为 `PAPER_FETCH_BROWSER_BINARY_PATH`；这样会把
 managed bundle 错当成 custom executable。官方 runtime 应保持该变量未设置，
-由 `python -m camoufox fetch` 和 Camoufox active-version 配置共同管理。只有自定义
+由启动前自动准备和 Camoufox active-version 配置共同管理。只有自定义
 runtime 明确实现 Camoufox 的 custom-path metadata 布局时才使用该覆盖。
 
 ## 生命周期
 
 一个 `RuntimeContext` 在 owning thread 内复用一个 Camoufox process，每次操作
 创建独立 `BrowserContext`。HTML、PDF fallback 和资产下载共享相同 runtime
-配置及 provider storage-state，但 Playwright sync 对象不会跨线程共享。
+配置及 provider storage-state，同一浏览器生命周期不重复检查更新；无需浏览器
+的抓取不检查更新。Playwright sync 对象不会跨线程共享。
 
 `doctor` 和 `provider_status` 只做静态依赖/配置检查，不启动浏览器、不下载
-runtime、不访问出版社页面。CLI 与 MCP `browser_preflight` 都只使用已准备的
-runtime，并打开页面、按请求保存过滤后的 storage-state。两者都不会
+runtime、不访问出版社页面。CLI 与 MCP `browser_preflight` 在实际启动前自动
+准备 managed runtime，并打开页面、按请求保存过滤后的 storage-state。两者都不会
 自动认证、绕过 challenge/paywall，也不会调用 PDF fallback。
 
 Preflight 只报告本次 live 检查；正式 fetch 独立导航并重新执行身份、阻断与正文验收。

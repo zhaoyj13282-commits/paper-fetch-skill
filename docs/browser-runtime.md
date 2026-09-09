@@ -170,10 +170,15 @@ browser runtime 固定为 Camoufox。可使用：
 `PAPER_FETCH_BROWSER_USER_AGENT` 只用于允许覆盖 UA 的 direct publisher request；
 Camoufox 启动不接受固定 UA，以避免生成的 Firefox 指纹内部不一致。
 
-普通 fetch、auth 和 preflight 只读探测已准备的 managed runtime，启动时保持
-`download_if_missing=False`，不会安装、更新、修复、创建协调锁或写准备状态。缺失或
-损坏时返回 `not_configured`，用户需显式运行 `python -m camoufox fetch`。随后由
-Camoufox package 自行解析 active browser version。paper-fetch 不会把官方 macOS app 内的 `Contents/MacOS/camoufox` 再当成
+普通 fetch、auth 和 preflight 每次实际启动浏览器前自动准备 managed runtime。
+未固定版本时查询所选渠道的最新兼容版本；固定版本时只补全该版本，有效本地
+固定版本不联网查询。有效目标直接复用，损坏目标只修复经路径校验的版本目录。
+共享 cache 的准备使用进程锁串行化，并在锁内重新探测；不会清空整个 cache。
+查询或安装失败时提示并恢复有效本地版本；没有可用版本时沿用 provider 失败处理。
+配置损坏、路径越界或 symlink/reparse 路径会明确报错，不通过删除配置修复。
+下载进度写入 stderr，Python 依赖缺失仍报告配置错误，不自动安装依赖。
+无浏览器的抓取不检查更新；正文、图片和附件在同一浏览器生命周期内复用 runtime。
+准备完成后由 Camoufox package 自行解析 active browser version。paper-fetch 不会把官方 macOS app 内的 `Contents/MacOS/camoufox` 再当成
 custom executable 传回去，因为 Camoufox 的 bundle metadata 位于
 `Contents/Resources`。只有显式 `PAPER_FETCH_BROWSER_BINARY_PATH` 才作为 custom
 `executable_path` 透传；在 macOS 上优先使用 managed runtime，除非 custom bundle
@@ -191,16 +196,17 @@ PAPER_FETCH_RUN_NATIVE_CAMOUFOX_TEST=1 \
 该 test 串行运行是因为临时 context 与持久 context 共用同一个本地 browser
 runtime；Windows / WSL 只运行对应的 pure-mock unit tests。原生 test 通过
 Camoufox 公开的 `exclude_addons` 参数排除默认扩展，并对实际扩展下载设置失败
-tripwire，因此只验证已预置 managed app bundle 和两类 context 的本地启动，
+tripwire，并将版本查询限定为已预置的版本、禁止重新安装，因此只验证
+已预置 managed app bundle 和两类 context 的本地启动，
 不依赖已有扩展缓存，也不验证 Camoufox 默认扩展行为。它还通过 BrowserForge
 公开的 screen constraint 使用固定 synthetic screen，避免原生 CI 依赖已登录的
 WindowServer 或物理显示器。
 
 ## 诊断边界
 
-`doctor`/`provider_status` 不启动 runtime。`fetch`、`auth` 和 `browser-preflight`
-也不会下载、更新或修复 runtime；缺失时先显式运行 `python -m camoufox fetch`。
-预检随后才执行 live 页面访问和可选 storage-state 保存。challenge、登录、验证码、付费和 entitlement
+`doctor`/`provider_status` 保持只读，不联网查询或准备 runtime。`fetch`、`auth` 和
+`browser-preflight` 在实际启动前自动准备 managed runtime；显式 executable 不参与
+自动管理。预检随后执行 live 页面访问和可选 storage-state 保存。challenge、登录、验证码、付费和 entitlement
 边界始终需要合法用户操作，工具不会自动绕过。
 
 IEEE preflight 不以初始 HTTP 202 或 `/rest/document/` 请求作为终态：它最多等待

@@ -94,7 +94,7 @@ def server_instructions() -> str:
         "artifact_mode=markdown-assets. Fetch and batch calls may access remote services; "
         "fetch_paper and batch_fetch may write provider artifacts/cache or explicit outputs, "
         "while browser_preflight may open publisher pages and save filtered storage-state. "
-        "Browser routes only probe and use an already prepared Camoufox runtime. "
+        "Browser routes automatically prepare/update managed Camoufox before launch, respecting channel/pins; a valid local runtime is reused if updates fail. Explicit executables are user-managed. "
         "provider_status is local/static; "
         "browser_preflight is live and never performs PDF fallback or automatic auth. Do not "
         "bypass login, challenge, paywall, or entitlement boundaries. Read current provider, "

@@ -161,11 +161,14 @@ def validate_contract(
     for key in (
         "runtime_bundle_built_in",
         "install_downloads_runtime",
-        "managed_runtime_preparation",
     ):
         if browser.get(key) is not False:
             errors.append(f"browser.{key} must be false")
-    for key in ("native_bundle_gate", "cooperative_cancel_owner_thread_cleanup"):
+    for key in (
+        "managed_runtime_preparation",
+        "native_bundle_gate",
+        "cooperative_cancel_owner_thread_cleanup",
+    ):
         if browser.get(key) is not True:
             errors.append(f"browser.{key} must be true")
 

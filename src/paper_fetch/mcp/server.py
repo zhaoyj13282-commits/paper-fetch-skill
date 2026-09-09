@@ -316,7 +316,7 @@ def build_server() -> PaperFetchMCPServer:
             "same cache, artifacts, or Markdown as fetch_paper. detail=bounded returns "
             "only a batch-wide bounded text sample. batch_results atomically writes "
             "the final input-ordered JSONL result; overwrite defaults false. Browser "
-            "routes require an already prepared Camoufox runtime."
+            "routes automatically prepare/update managed Camoufox before browser launch."
         ),
         annotations=_fetch_annotations(),
         structured_output=False,
@@ -405,8 +405,9 @@ def build_server() -> PaperFetchMCPServer:
         name="browser_preflight",
         description=(
             "Live-check the shared browser HTML path for one provider or all browser "
-            "providers. This opens publisher pages and may update filtered storage-state; "
-            "it never runs PDF fallback, automatic authentication, or runtime installation."
+            "providers. This prepares managed Camoufox before launch, opens publisher "
+            "pages, and may update filtered storage-state; it never runs PDF fallback "
+            "or automatic authentication."
         ),
         annotations=_browser_preflight_annotations(),
         structured_output=False,
