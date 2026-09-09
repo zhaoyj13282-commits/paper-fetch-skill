@@ -6,6 +6,18 @@
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.2.2 - 2026-09-09
+
+### 变更——Camoufox runtime 自动准备
+
+- CLI、MCP 和库调用的浏览器抓取、浏览器预检及交互认证现在在实际启动浏览器前自动准备 managed Camoufox。未固定版本时检查所选渠道的最新兼容版本；固定版本时只补全对应版本，有效本地副本直接复用且不查询版本。复用同一浏览器不会重复准备，无浏览器的请求不检查更新。
+- 更新查询或安装失败时保留校验有效的本地 runtime；没有可用 runtime 时沿用现有 provider 错误处理报告准备失败。显式 executable 路径仍由用户维护，缺失的 Python 依赖仍需用户安装。
+
+### 修复——managed runtime 安全与协议输出
+
+- 准备操作通过进程锁串行修改共享 cache，锁内重新检查本地状态，只修复经路径校验的目标版本目录。更新失败时恢复原 active 配置，不清空 cache；配置损坏、不安全路径及 symlink/reparse 路径明确报错，macOS managed bundle 保留原生启动布局。
+- 下载和准备输出写入 stderr，保持 MCP stdout 的 JSON-RPC 契约。`doctor` 和 `provider_status` 继续只读；安装器不下载浏览器 runtime，离线包不内置浏览器 binary。浏览器文档、agent/MCP 指引及 macOS 契约已同步启动前自动准备规则。
+
 ## 6.2.1 - 2026-09-08
 
 ### 新增——arXiv 官方附件

@@ -6,6 +6,18 @@ All notable public changes to `paper-fetch-skill` are documented in this file.
 
 <!-- SCAFFOLD: changelog-unreleased -->
 
+## 6.2.2 - 2026-09-09
+
+### Changed — automatic Camoufox runtime preparation
+
+- CLI, MCP, and library browser routes, browser preflight, and interactive authentication now prepare managed Camoufox immediately before browser launch. Unpinned runtimes check the selected channel for the latest compatible release; pinned runtimes only prepare the requested version and reuse a valid local copy without querying releases. Browser reuse does not repeat preparation, and browser-free requests do not check for updates.
+- Failed update checks or installations retain a validated local runtime; a missing or unusable runtime reports preparation failure through existing provider error handling. Explicit executable paths remain user-managed, and missing Python dependencies still require installation by the user.
+
+### Fixed — managed runtime safety and protocol output
+
+- Preparation serializes shared-cache changes across processes, rechecks local state under the lock, and only repairs the validated target version directory. Failed updates restore the previous active configuration without purging the cache. Corrupt configuration, unsafe paths, and symlink/reparse points fail explicitly; managed macOS bundles retain their native launch layout.
+- Download and preparation output goes to stderr, preserving MCP JSON-RPC stdout. `doctor` and `provider_status` remain read-only; installers still do not download browser runtimes, and offline packages do not include browser binaries. Browser documentation, agent/MCP guidance, and the macOS contract now reflect launch-time preparation.
+
 ## 6.2.1 - 2026-09-08
 
 ### Added — arXiv ancillary files
