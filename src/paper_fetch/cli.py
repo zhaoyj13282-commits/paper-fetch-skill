@@ -1885,6 +1885,10 @@ def build_parser(
         _command_parser=preflight_parser,
     )
 
+    from .scihub import register_subcommand as register_scihub_subcommand
+
+    register_scihub_subcommand(subparsers)
+
     if doctor_registrar is None:
         _register_doctor_subcommand(subparsers)
     else:

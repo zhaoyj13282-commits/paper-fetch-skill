@@ -74,7 +74,19 @@ paper-fetch fetch --query-file ./queries.txt --download-pdf --output-dir ./paper
 
 只有下载并验证了真实 PDF 才满足该选项；找不到 PDF、收到登录 HTML、PDF 结构损坏或身份冲突时，该篇记录失败，批量继续其它论文并返回非零退出码。相同 PDF 重跑不改写文件，不同内容需显式 `--overwrite`。该选项不能与 `--artifact-mode none` 同用。
 
-来源沿用现有出版社官方接口、论文页面和 arXiv 官方站点；当前不使用 Sci-Hub。需要出版社浏览器访问时安装 `.[full]` 并配置已有访问权限。下载来源、访问权限和网络状态决定能否取得 PDF；本选项不会将 HTML/Markdown 打印成 PDF。
+这条 fetch 路线沿用现有出版社官方接口、论文页面和 arXiv 官方站点；Sci-Hub 使用下方的独立命令。需要出版社浏览器访问时安装 `.[full]` 并配置已有访问权限。下载来源、访问权限和网络状态决定能否取得 PDF；本选项不会将 HTML/Markdown 打印成 PDF。
+
+## Sci-Hub 下载（本 fork）
+
+```bash
+paper-fetch scihub --query "Nanometre-scale thermometry in a living cell" --output-dir ./papers
+paper-fetch scihub --query-file ./references.txt --output-dir ./papers
+```
+
+支持 DOI、准确标题、每行一篇的参考文献列表；默认连接 `sci-hub.ru`，可用
+`--base-url` 指定其他入口。自动处理当前站点的 ALTCHA 计算验证，下载后核对
+PDF 身份并保存原始字节。逐篇结果写入 `scihub-results.jsonl`；详见
+[Sci-Hub 使用说明与实测证据](docs/scihub.md)。需要 `.[pdf]` 依赖。
 
 ## 你会得到什么
 

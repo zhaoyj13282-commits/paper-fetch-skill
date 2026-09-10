@@ -471,3 +471,9 @@ CLI 会在开始抓取前创建最终输出目录，包括显式 `--output-dir` 
 | `2` | 查询歧义或 argparse 参数错误 |
 | `3` | 无访问权限 |
 | `4` | 被限速 |
+
+## Sci-Hub 原始 PDF 来源
+
+使用显式命令 `paper-fetch scihub --query "DOI或标题"`，或
+`paper-fetch scihub --query-file ./references.txt`。支持当前站点计算验证、
+PDF 身份验收和逐篇结果记录，详见 [`scihub.md`](scihub.md)。
