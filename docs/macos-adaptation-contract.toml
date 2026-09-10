@@ -46,3 +46,9 @@ asset_owner = "scripts/prepare_release_assets.py"
 single_source_revision = true
 public_assets_are_installers_only = true
 build_evidence_is_not_public = true
+
+[browser.institutional_helper]
+# Standalone python -m paper_fetch.institutional only; provider backend unchanged.
+installed_browser_opt_in = ["chrome", "msedge"]
+profile_isolated_by_browser = true
+native_macos_verified = false

@@ -471,3 +471,13 @@ CLI 会在开始抓取前创建最终输出目录，包括显式 `--output-dir` 
 | `2` | 查询歧义或 argparse 参数错误 |
 | `3` | 无访问权限 |
 | `4` | 被限速 |
+
+### 北大机构登录下载 ScienceDirect 原始 PDF
+
+单篇机构下载入口见 [`institutional-pdf.md`](institutional-pdf.md)：
+
+```bash
+python -m paper_fetch.institutional --url "https://www.sciencedirect.com/science/article/pii/S0044848621007377"
+```
+
+在打开的北大认证页面填写账号，脚本等待返回出版社后下载并验证 PDF。
