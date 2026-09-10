@@ -77,6 +77,15 @@ def publisher_pdf_url(url: str) -> bool:
     )
 
 
+def publisher_wait_message(title: str) -> str | None:
+    if title.strip().lower().rstrip(".\u2026") in {
+        "just a moment",
+        "\u8bf7\u7a0d\u5019",
+    }:
+        return "Publisher verification is pending; complete any visible verification in the browser."
+    return None
+
+
 def save_pdf(
     data: bytes, *, pii: str, doi: str, output_dir: Path, overwrite: bool = False
 ) -> dict[str, Any]:
@@ -165,6 +174,7 @@ def download_article(
     attempted: set[str] = set()
     last_host = ""
     last_failure = ""
+    reported_waits: set[str] = set()
 
     def on_response(response: Any) -> None:
         try:
@@ -223,6 +233,13 @@ def download_article(
                 if host not in {"www.sciencedirect.com", "sciencedirect.com"}:
                     continue
                 try:
+                    waiting = publisher_wait_message(active.title())
+                    if waiting:
+                        last_failure = waiting
+                        if waiting not in reported_waits:
+                            print(waiting, flush=True)
+                            reported_waits.add(waiting)
+                        continue
                     if (
                         urlsplit(active.url).path.rstrip("/")
                         != "/science/article/pii/" + pii

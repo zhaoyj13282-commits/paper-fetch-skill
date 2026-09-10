@@ -36,3 +36,7 @@ Chrome。不传参数时使用项目管理的 Camoufox，首次运行需要下�
 
 当前支持北大 + ScienceDirect 文章 URL。它独立于 Elsevier API provider，
 不改变 `paper-fetch fetch`。本地实测平台为 Windows；没有原生 macOS 实测证据。
+
+若出版社页面停在“请稍候…”或 “Just a moment”，入口会明确提示网站验证尚未
+完成。完成可见验证后仍不跳转时，本次运行不能视为已取得订阅访问权；超时
+将失败退出。切换浏览器会使用独立 profile，可能需要重新完成北大认证。

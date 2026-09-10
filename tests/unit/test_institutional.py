@@ -147,6 +147,9 @@ def test_download_uses_same_session_and_writes_verified_report(monkeypatch, tmp_
         def on(self, name, callback):
             pass
 
+        def title(self):
+            return "ScienceDirect"
+
         def set_default_timeout(self, value):
             pass
 
@@ -212,3 +215,13 @@ def test_cli_profiles_are_isolated_by_browser(monkeypatch, tmp_path):
     assert m.main(["--url", URL, "--browser", "camoufox"]) == 0
     assert calls[0]["profile_dir"] != calls[1]["profile_dir"]
     assert calls[0]["browser"] == "msedge"
+
+
+def test_publisher_challenge_has_actionable_status():
+    m = subject()
+    assert (
+        m.publisher_wait_message("请稍候…")
+        == "Publisher verification is pending; complete any visible verification in the browser."
+    )
+    assert m.publisher_wait_message("Just a moment...")
+    assert m.publisher_wait_message("ScienceDirect") is None
