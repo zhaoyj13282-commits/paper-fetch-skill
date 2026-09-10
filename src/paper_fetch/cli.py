@@ -230,6 +230,7 @@ class SingleFetchResult:
     envelope: FetchEnvelope
     output_path: Path | None = None
     saved_markdown_path: Path | None = None
+    pdf_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -727,6 +728,7 @@ def _run_single_fetch_with_context(
     cancel_check: Callable[[], bool] | None = None,
     context: RuntimeContext,
 ) -> SingleFetchResult:
+    context.downloaded_pdf_paths.clear()
     modes = _compute_modes(args)
     render_options = _render_options_from_args(args)
     overwrite = bool(getattr(args, "overwrite", False))
@@ -737,6 +739,8 @@ def _run_single_fetch_with_context(
                 modes=modes,
                 strategy=FetchStrategy(
                     allow_metadata_only_fallback=True,
+                    download_pdf=bool(getattr(args, "download_pdf", False)),
+                    overwrite_pdf=overwrite,
                     asset_profile=args.asset_profile,
                     require_local_body_assets=bool(
                         getattr(args, "require_local_body_assets", False)
@@ -750,6 +754,13 @@ def _run_single_fetch_with_context(
             context=context,
         )
         context.raise_if_cancelled()
+        if getattr(args, "download_pdf", False) and not context.downloaded_pdf_paths:
+            raise PaperFetchFailure(
+                "no_result",
+                "PDF requested but no verified PDF was downloaded.",
+                warnings=envelope.warnings,
+                source_trail=envelope.source_trail,
+            )
         context.report_progress("stage", stage="writing")
         saved_markdown_path = None
         if args.save_markdown_to_disk:
@@ -794,6 +805,7 @@ def _run_single_fetch_with_context(
             envelope=envelope,
             output_path=primary_output_path,
             saved_markdown_path=saved_markdown_path,
+            pdf_paths=tuple(context.downloaded_pdf_paths),
         )
 
     markdown_override = (
@@ -856,6 +868,7 @@ def _run_single_fetch_with_context(
         envelope=envelope,
         output_path=output_path,
         saved_markdown_path=saved_markdown_path,
+        pdf_paths=tuple(context.downloaded_pdf_paths),
     )
 
 
@@ -889,6 +902,7 @@ def _manifest_request_parameters(
         "artifact_mode": artifact_mode,
         "no_download": False,
         "save_markdown": bool(args.save_markdown_to_disk),
+        "download_pdf": bool(getattr(args, "download_pdf", False)),
         "output": args.output,
         "output_dir": str(output_dir),
         "primary_output_to_output_dir": bool(
@@ -944,6 +958,8 @@ def _manifest_output_artifacts(
                 kind="saved_markdown",
             )
         )
+    for pdf_path in result.pdf_paths:
+        artifacts.append(ManifestOutputArtifactSpec(path=str(pdf_path), kind="pdf"))
     for diagnostic in result.envelope.diagnostic_artifacts:
         path = str(diagnostic.get("path") or "").strip()
         if not path:
@@ -1525,6 +1541,12 @@ def _add_fetch_arguments(
         help=("Allow replacement of existing final outputs and batch results."),
     )
     parser.add_argument(
+        "--download-pdf",
+        action="store_true",
+        default=_default(False, suppress_defaults=suppress_defaults),
+        help="Also save a verified original PDF; fail the paper if no PDF is available.",
+    )
+    parser.add_argument(
         "--format",
         choices=("markdown", "json", "both"),
         default=_default("markdown", suppress_defaults=suppress_defaults),
@@ -2071,6 +2093,8 @@ def _run_fetch_namespace(args: argparse.Namespace) -> int:
     if args.control_stdin and args.progress != "jsonl":
         parser.error("--control-stdin requires --progress jsonl.")
     artifact_mode = _effective_artifact_mode(args)
+    if getattr(args, "download_pdf", False) and artifact_mode == "none":
+        parser.error("--download-pdf requires --artifact-mode markdown-assets or all.")
     args.output_is_explicit = _has_explicit_option(raw_args, "--output")
     batch_mode = bool(args.query_file)
     if batch_mode and args.output_is_explicit:

@@ -151,6 +151,21 @@ MCP 的 `browser_preflight` 直接调用同一个 preflight 核心。无参数�
 
 storage-state JSON 是主要复用状态，只是本地辅助状态，不绕过权限，也不是跨机器通用凭据；站点 session 可能按时间、网络、设备或浏览器指纹失效。未配置持久凭证不会阻止正常抓取；抓取仍会按当前 browser workflow 和 provider PDF / abstract-only / metadata fallback 运行。手动 auth 后再次抓取同一 provider 会复用同一个 publisher storage-state 文件。
 
+## 原始 PDF 下载
+
+`--download-pdf` 要求在常规全文获取后额外保存原始 PDF，单篇与 `--query-file` 批量模式均支持。需要 `.[pdf]` 依赖；浏览器来源需 `.[full]`。
+
+```bash
+paper-fetch fetch --query "Attention Is All You Need" --download-pdf --output-dir ./papers --manifest ./papers/result.json
+paper-fetch fetch --query-file ./queries.txt --download-pdf --output-dir ./papers --batch-concurrency 4
+```
+
+它复用 provider 已得到的 PDF，或从同篇 HTML 的 PDF 链接、元数据、provider PDF 路线继续下载。HTTP 失败时，有浏览器能力的 provider 会复用现有浏览器配置及会话重试；Elsevier/PLOS 复用各自的官方 PDF 路线。验证文件头、非空 PDF 结构、大小/页数限制和可识别的身份冲突后，通过现有原子写入接口保存。没有可识别的 PDF 身份信息不等于已独立确认全文身份。
+
+PDF 位于 `--output-dir`（或默认下载目录）。单篇 manifest、批量 JSONL 的 `output_artifacts` 新增 `kind=pdf` 条目，包含文件路径和摘要；`request.parameters.download_pdf` 记录请求选项。PDF 来源链接也记录在 warnings 中，敏感 URL 参数会脱敏。Markdown/JSON 的 `content_kind` 仍描述可解析的文本正文，PDF 是否保存以 `output_artifacts` 为准。
+
+无 PDF 时，该篇明确失败，批量继续且最终退出码非零。部分源可能已留下正文/调试产物，不能因此认定 PDF 已获取。PDF 重复字节保持幂等，不同内容必须 `--overwrite`。`--artifact-mode none` 与此选项冲突，会在网络访问前拒绝。
+
 ## 批量抓取
 
 批量模式使用 `--query-file <path>`，文件中每行一个 DOI、论文 landing URL 或标题；空行和以 `#` 开头的注释行会被忽略。`--query` 与 `--query-file` 互斥，必须二选一。

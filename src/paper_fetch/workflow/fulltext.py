@@ -50,6 +50,7 @@ from ..utils import (
     safe_text,
 )
 from .metadata import fetch_metadata_for_resolved_query
+from .pdf_download import save_requested_pdf
 from .rendering import finalize_article
 from .resolution import resolve_paper
 from .routing import (
@@ -264,6 +265,19 @@ def _try_official_provider(
                     details={"identity": identity.to_dict()},
                 ),
             )
+        if strategy.download_pdf:
+            context.report_progress("stage", stage="pdf")
+            pdf_path, pdf_url = save_requested_pdf(
+                provider_name,
+                doi,
+                metadata,
+                provider_result.content,
+                client=provider_client,
+                context=context,
+                overwrite=strategy.overwrite_pdf,
+            )
+            context.downloaded_pdf_paths.append(pdf_path)
+            warnings.append(f"Original PDF saved to {pdf_path}; source: {pdf_url}")
         workflow_trace[:] = merge_trace(workflow_trace, provider_result.trace)
         extend_unique(warnings, provider_result.warnings)
         download_warnings, download_trail = artifact_store.save_provider_payload(

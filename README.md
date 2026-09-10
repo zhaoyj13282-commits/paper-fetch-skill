@@ -60,6 +60,22 @@ CLI 默认在终端 stderr 显示逐篇阶段和资产进度；`--progress text|
 
 CLI 仍会准备显式工作目录；需要真正无落盘的临时读取时，使用 MCP 临时阅读预设。完整输出和落盘矩阵见 [`docs/cli.md`](docs/cli.md) 与 [`presets.md`](skills/paper-fetch-skill/references/presets.md)。
 
+## 同时下载原始 PDF（本 fork）
+
+在单篇或批量命令中加 `--download-pdf`，即使已取得 HTML/XML 全文，也会继续获取并保存原始 PDF：
+
+```bash
+python -m pip install ".[pdf]"
+paper-fetch fetch --query "论文标题或 DOI" --download-pdf --output-dir ./papers
+paper-fetch fetch --query-file ./queries.txt --download-pdf --output-dir ./papers --batch-concurrency 4
+```
+
+`queries.txt` 每行一个标题、DOI 或论文 URL；格式复杂的参考文献先整理成标题或 DOI。PDF 文件沿用作者、年份、标题命名，批量 `batch-results.jsonl` 的 `output_artifacts` 记录 PDF 路径、大小和 SHA-256；单篇可加 `--manifest ./papers/result.json` 保存同类记录。默认 Markdown/JSON 输出继续保留。
+
+只有下载并验证了真实 PDF 才满足该选项；找不到 PDF、收到登录 HTML、PDF 结构损坏或身份冲突时，该篇记录失败，批量继续其它论文并返回非零退出码。相同 PDF 重跑不改写文件，不同内容需显式 `--overwrite`。该选项不能与 `--artifact-mode none` 同用。
+
+来源沿用现有出版社官方接口、论文页面和 arXiv 官方站点；当前不使用 Sci-Hub。需要出版社浏览器访问时安装 `.[full]` 并配置已有访问权限。下载来源、访问权限和网络状态决定能否取得 PDF；本选项不会将 HTML/Markdown 打印成 PDF。
+
 ## 你会得到什么
 
 - 带 YAML front matter 的论文 Markdown，包含题名、作者、期刊、DOI、来源和正文状态。

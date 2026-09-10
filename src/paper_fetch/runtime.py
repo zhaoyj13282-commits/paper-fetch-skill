@@ -115,6 +115,7 @@ class RuntimeContext:
     session_cache: dict[tuple[Hashable, ...], Any] = field(default_factory=dict)
     fetch_trace: list[Any] = field(default_factory=list)
     diagnostic_artifacts: list[dict[str, Any]] = field(default_factory=list)
+    downloaded_pdf_paths: list[Path] = field(default_factory=list)
     capability_uses: list[dict[str, Any]] = field(default_factory=list)
     request_started_at: float = field(default_factory=time.monotonic)
     deadline_monotonic: float | None = None

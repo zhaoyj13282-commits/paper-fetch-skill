@@ -131,6 +131,8 @@ class FetchStrategy:
     asset_profile: AssetProfile | None = None
     require_local_body_assets: bool = False
     require_full_size_body_assets: bool = False
+    download_pdf: bool = False
+    overwrite_pdf: bool = False
 
     def __post_init__(self) -> None:
         if self.require_full_size_body_assets and not self.require_local_body_assets:
